@@ -6,13 +6,14 @@ import csv
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-from pyproj import Proj
 
 import sqlite3
 from rosidl_runtime_py.utilities import get_message
 from rclpy.serialization import deserialize_message
 
-import sensor_msgs.point_cloud2 as pc2
+import ros2_numpy as rnp
+
+matplotlib.use("TkAgg")
 
 class BagFileParser():
 
@@ -67,6 +68,15 @@ def load_points(data_dir):
 
     print("Loaded ros bag: {}".format(rosbag_dirs[i]))
 
+    fig = plt.figure(i)
+    ax = fig.add_subplot(projection='3d')
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+    # ax.set_xlim([-40, 40])
+    # ax.set_ylim([-40, 40])
+    # ax.set_zlim([-10, 10])
+
     for j in range(len(messages)):
 
       points_msg = messages[j]
@@ -74,10 +84,20 @@ def load_points(data_dir):
       print(points_msg[0])
       print(points_msg[1].header)
       print(points_msg[1].height, points_msg[1].width, points_msg[1].is_dense, points_msg[1].is_bigendian)
+      print(points_msg[1].point_step, points_msg[1].row_step)
       for field in points_msg[1].fields:
         print(field)
-      print(points_msg[1].point_step)
-      print(points_msg[1].row_step)
+
+      data = rnp.numpify(points_msg[1])
+
+      for j in range(len(data['x'])):
+        ax.scatter(data['x'][j], data['y'][j], data['z'][j], s=1, c='b')
+
+        plt.draw()
+        plt.pause(0.0001)
+
+      # data = np.stack([data['x'], data['y'], data['z']], axis=-1)
+      # print(data.shape)
 
       return
 
