@@ -13,7 +13,25 @@ from rclpy.serialization import deserialize_message
 
 import ros2_numpy as rnp
 
+import numpy as np
+import numpy.linalg as npla
+
 matplotlib.use("TkAgg")
+
+
+def cart2pol(pts: np.ndarray) -> np.ndarray:
+  """Converts points from cartesian to polar.
+  Args:
+    pts (np.ndarray): points in cartesian coordinate [x, y, z]
+  Returns:
+    np.ndarray: points in polar coordinate [rho, theta, phi]
+  """
+  rho = npla.norm(pts, axis=-1, keepdims=True)
+  phi = np.arctan2(pts[..., 1:2], pts[..., 0:1])
+  theta = np.arctan2(np.sqrt(pts[..., 0:1]**2 + pts[..., 1:2]**2), pts[..., 2:3])
+  print(rho.shape, phi.shape, theta.shape)
+  return np.concatenate((rho, theta, phi), axis=-1)
+
 
 class BagFileParser():
 
@@ -69,10 +87,10 @@ def load_points(data_dir):
     print("Loaded ros bag: {}".format(rosbag_dirs[i]))
 
     fig = plt.figure(i)
-    ax = fig.add_subplot(projection='3d')
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.set_zlabel('z')
+    # ax = fig.add_subplot(projection='3d')
+    # ax.set_xlabel('x')
+    # ax.set_ylabel('y')
+    # ax.set_zlabel('z')
     # ax.set_xlim([-40, 40])
     # ax.set_ylim([-40, 40])
     # ax.set_zlim([-10, 10])
@@ -90,16 +108,42 @@ def load_points(data_dir):
 
       data = rnp.numpify(points_msg[1])
 
-      for j in range(len(data['x'])):
-        ax.scatter(data['x'][j], data['y'][j], data['z'][j], s=1, c='b')
+      # # for j in range(len(data['x'])):
+      # #   ax.scatter(data['x'][j], data['y'][j], data['z'][j], s=1, c='b')
 
-        plt.draw()
-        plt.pause(0.0001)
+      # #   plt.draw()
+      # #   plt.pause(0.0001)
 
-      # data = np.stack([data['x'], data['y'], data['z']], axis=-1)
-      # print(data.shape)
+      # side
+      ax = fig.add_subplot(411)
+      ax.plot(np.arange(data['beam_side'].shape[0]), data['beam_side'])
 
-      return
+      ax = fig.add_subplot(412)
+      ax.plot(np.arange(data['yaw'].shape[0]), data['yaw'])
+      ax = fig.add_subplot(413)
+      ax.plot(np.arange(data['pitch'].shape[0]), data['pitch'])
+      ax = fig.add_subplot(414)
+      ax.plot(np.arange(data['range'].shape[0]), data['range'])
+
+      # points = np.stack([data['x'], data['y'], data['z']], axis=-1)
+
+      # # polpts = cart2pol(points[..., :3])
+      # # print(polpts.shape)
+
+      # # ax = fig.add_subplot(413)
+      # # ax.plot(np.arange(polpts.shape[0]), polpts[:, 2])
+
+      # # for i in range(1, polpts.shape[0]):
+      # #   if polpts[i, 2] - polpts[i - 1, 2] > np.pi:
+      # #     polpts[i, 2] -= 2 * np.pi
+      # #   elif polpts[i, 2] - polpts[i - 1, 2] < -np.pi:
+      # #     polpts[i, 2] += 2 * np.pi
+
+      # # ax = fig.add_subplot(414)
+      # # ax.plot(np.arange(polpts.shape[0]), polpts[:, 2])
+      plt.show()
+
+      input()
 
 
 if __name__ == "__main__":
