@@ -86,7 +86,7 @@ def load_points(data_dir):
 
     print("Loaded ros bag: {}".format(rosbag_dirs[i]))
 
-    fig = plt.figure(i)
+    # fig = plt.figure(i)
     # ax = fig.add_subplot(projection='3d')
     # ax.set_xlabel('x')
     # ax.set_ylabel('y')
@@ -114,16 +114,39 @@ def load_points(data_dir):
       # #   plt.draw()
       # #   plt.pause(0.0001)
 
-      # side
-      ax = fig.add_subplot(411)
-      ax.plot(np.arange(data['beam_side'].shape[0]), data['beam_side'])
+      filter = np.where(data['beam_side'])
 
-      ax = fig.add_subplot(412)
-      ax.plot(np.arange(data['yaw'].shape[0]), data['yaw'])
-      ax = fig.add_subplot(413)
-      ax.plot(np.arange(data['pitch'].shape[0]), data['pitch'])
-      ax = fig.add_subplot(414)
-      ax.plot(np.arange(data['range'].shape[0]), data['range'])
+      filtered_pitch = data['pitch'][filter]
+      
+      num_line = 0
+      prev_pitch = 100
+      for a in filtered_pitch:
+        if prev_pitch < -50 and a > -50:
+          num_line += 1
+        prev_pitch = a
+      input("Number of lines is {}".format(num_line))
+
+      # # side
+      # fig = plt.figure(i)
+      # ax = fig.add_subplot(511)
+      # ax.plot(np.arange(data['beam_side'][filter].shape[0]), data['beam_side'][filter])
+      # ax.set_ylabel("beam_side")
+
+      # ax = fig.add_subplot(512)
+      # ax.plot(np.arange(data['yaw'][filter].shape[0]), data['yaw'][filter])
+      # ax.set_ylabel("yaw")
+
+      # ax = fig.add_subplot(513)
+      # ax.plot(np.arange(data['pitch'][filter].shape[0]), data['pitch'][filter])
+      # ax.set_ylabel("pitch")
+
+      # ax = fig.add_subplot(514)
+      # ax.plot(np.arange(data['range'][filter].shape[0]), data['range'][filter])
+      # ax.set_ylabel("range")
+
+      # ax = fig.add_subplot(515)
+      # ax.plot(np.arange(data['y'][filter].shape[0]), data['y'][filter])
+      # ax.set_ylabel("y")
 
       # points = np.stack([data['x'], data['y'], data['z']], axis=-1)
 
@@ -142,8 +165,7 @@ def load_points(data_dir):
       # # ax = fig.add_subplot(414)
       # # ax.plot(np.arange(polpts.shape[0]), polpts[:, 2])
       plt.show()
-
-      input()
+      # fig.clear()
 
 
 if __name__ == "__main__":
