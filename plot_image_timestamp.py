@@ -57,14 +57,14 @@ def load_points(data_dir):
 
   rosbag_dirs = [name for name in os.listdir(data_dir) if osp.isdir(osp.join(data_dir, name))]
   rosbag_dirs.sort()
-  rosbag_dirs = rosbag_dirs[3:]
+  # rosbag_dirs = rosbag_dirs[3:]
 
   for i in range(len(rosbag_dirs)):
     bag_file = '{0}/{1}/{1}_0.db3'.format(data_dir, rosbag_dirs[i])
 
     try:
       parser = BagFileParser(bag_file)
-      messages = parser.get_bag_messages("/xb3_images")
+      messages = parser.get_bag_messages("/images")
     except Exception as e:
       print("Could not open rosbag for run {}".format(rosbag_dirs[i]))
       continue
@@ -77,7 +77,7 @@ def load_points(data_dir):
 
       points_msg = messages[j]
 
-      # print(points_msg[0])
+      print(points_msg[0])
       timestamps.append(points_msg[0])
 
     print("Number of images: ", len(timestamps))
