@@ -1,8 +1,6 @@
 import os
 import os.path as osp
 import argparse
-import datetime
-import csv
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -117,7 +115,7 @@ def load_points(data_dir):
       filter = np.where(data['beam_side'])
 
       filtered_pitch = data['pitch'][filter]
-      
+
       num_line = 0
       prev_pitch = 100
       for a in filtered_pitch:
