@@ -80,11 +80,13 @@ def load_points(data_dir):
       # print(points_msg[0])
       timestamps.append(points_msg[0])
 
+    print("Number of images: ", len(timestamps))
+
     timediffs = []
     skipped = 0
     for j in range(len(timestamps) - 1):
-      timediff = (timestamps[1] - timestamps[0]) / 1e9
-      if timediff > 0.9:
+      timediff = (timestamps[j + 1] - timestamps[j]) / 1e9
+      if timediff > 0.1:
         skipped += 1
       timediffs.append(timediff)
 
@@ -92,7 +94,6 @@ def load_points(data_dir):
 
     fig = plt.figure(i)
     ax = fig.add_subplot()
-
 
     ax.plot(list(range(len(timestamps) - 1)), timediffs)
 
