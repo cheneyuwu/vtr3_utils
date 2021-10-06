@@ -1,0 +1,4 @@
+[submodule "boreas/boreas-devkit"]
+	path = boreas/boreas-devkit
+	url = git@github.com:utiasASRL/boreas-devkit.git
+	branch = master
