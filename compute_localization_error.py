@@ -134,6 +134,8 @@ def main(data_dir):
 
     # compute error
     errors[i, :] = T_robot_vertex_vec_gt - T_robot_vertex_vec
+  
+  print(np.mean(np.abs(errors), axis=0))
 
 
   plot_error(plt.figure(0), errors)
