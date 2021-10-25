@@ -116,7 +116,8 @@ def main(data_dir):
   T_lidar_robot = npla.inv(T_robot_lidar)
 
   # build dictionary
-  ground_truth_poses = { int(int(frame.timestamp * 1e9) / 1e6): frame.pose @ T_lidar_robot for frame in dataset.lidar_frames }
+  precision = 1e7  # divide by this number to ensure always find the timestamp
+  ground_truth_poses = { int(int(frame.timestamp * 1e9) / precision): frame.pose @ T_lidar_robot for frame in dataset.lidar_frames }
 
   print("Loaded number of poses: ", len(ground_truth_poses))
 
@@ -131,15 +132,15 @@ def main(data_dir):
 
     errors = np.empty((len(messages), 6))
     for i, message in enumerate(messages):
-      if not int(message[1].timestamp / 1e6) in ground_truth_poses.keys():
-        print("WARNING: time stamp not found 1: ", int(message[1].timestamp / 1e6))
+      if not int(message[1].timestamp / precision) in ground_truth_poses.keys():
+        print("WARNING: time stamp not found 1: ", int(message[1].timestamp / precision))
         continue
-      if not int(message[1].vertex_timestamp / 1e6) in ground_truth_poses.keys():
-        print("WARNING: time stamp not found 2: ", int(message[1].vertex_timestamp / 1e6))
+      if not int(message[1].vertex_timestamp / precision) in ground_truth_poses.keys():
+        print("WARNING: time stamp not found 2: ", int(message[1].vertex_timestamp / precision))
         continue
 
-      robot_timestamp = int(message[1].timestamp / 1e6)
-      vertex_timestamp = int(message[1].vertex_timestamp / 1e6)
+      robot_timestamp = int(message[1].timestamp / precision)
+      vertex_timestamp = int(message[1].vertex_timestamp / precision)
       T_robot_vertex_vec = np.array(message[1].t_robot_vertex.xi)
 
       # inv(T_enu_robot) @ T_enu_vertex = T_robot_vertex
