@@ -76,9 +76,10 @@ def plot_error(fig, errors):
 ROOT = osp.join(os.getenv('VTRDATA'), 'boreas/sequences')
 SEQUENCES = [
     ["boreas-2020-12-01-13-26"],
-    # ["boreas-2020-12-18-13-44"],  # cannot localize to the first run initially
-    # ["boreas-2021-01-15-12-17"],  # still cannot
+    ["boreas-2020-12-18-13-44"],
+    ["boreas-2021-01-15-12-17"],
     ["boreas-2021-03-02-13-38"],
+    ["boreas-2021-04-15-18-55"],
 ]
 
 ## OPTIONS
@@ -111,9 +112,6 @@ def main(data_dir):
   ground_truth_poses = { int(int(frame.timestamp * 1e9) / 1e6): frame.pose @ T_lidar_robot for frame in dataset.lidar_frames }
 
   print("Loaded number of poses: ", len(ground_truth_poses))
-  # for key in ground_truth_poses.keys():
-  #   print(key)
-  # exit()
 
   errors = np.empty((len(messages), 6))
   for i, message in enumerate(messages):
@@ -134,7 +132,7 @@ def main(data_dir):
 
     # compute error
     errors[i, :] = T_robot_vertex_vec_gt - T_robot_vertex_vec
-  
+
   print(np.mean(np.abs(errors), axis=0))
 
 
