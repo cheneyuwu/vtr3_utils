@@ -57,34 +57,34 @@ class BagFileParser():
 
 
 def plot_error(fig, errors):
+  # switch to absolute error
+  errors = np.abs(errors)
+
   plot_number = 611
   fig.set_size_inches(8, 12)
-  fig.subplots_adjust(left=0.16, right=0.95, bottom=0.1, top=0.95, wspace=0.7, hspace=0.6)
+  fig.subplots_adjust(left=0.16, right=0.95, bottom=0.1, top=0.93, wspace=0.7, hspace=0.7)
 
-  labels = ['x', 'y', 'z']
+  labels = ['x', 'y', 'z', 'x', 'y', 'z']
   for i in range(3):
     ax = fig.add_subplot(plot_number + i)
-    ax.plot(errors[:, i], '-', linewidth=1.0)
+    # plot the errors
+    ax.plot(errors[:, i], '-b', linewidth=1.0)
+    # plot the mean
+    ax.plot(np.ones_like(errors[:, i]) * np.mean(errors[:, i]), '-r', linewidth=2.0)
+    ax.set_title("mean: " + str(np.mean(errors[:, i])) + ", var: " + str(np.var(errors[:, i])))
     ax.set_xlabel(r"$t$ [$s$]")
-    ax.set_ylabel(r"$\hat{r}_x - r_x$ [$m$]".replace("x", labels[i]))
-  for i in range(3):
-    ax = fig.add_subplot(plot_number + 3 + i)
-    ax.plot(errors[:, i+3], '-', linewidth=1.0)
+    ax.set_ylabel(r"$|\hat{r}_x - r_x|$ [$m$]".replace("x", labels[i]))
+    ax.set_ylim([0, 1])
+  for i in range(3, 6):
+    ax = fig.add_subplot(plot_number + i)
+    # plot the errors
+    ax.plot(errors[:, i], '-b', linewidth=1.0)
+    # plot the mean
+    ax.plot(np.ones_like(errors[:, i]) * np.mean(errors[:, i]), '-r', linewidth=2.0)
+    ax.set_title("mean: " + str(np.mean(errors[:, i])) + ", var: " + str(np.var(errors[:, i])))
     ax.set_xlabel(r"$t$ [$s$]")
-    ax.set_ylabel(r"$\hat{\theta}_x - \theta_x$ [$rad$]".replace("x", labels[i]))
-
-## GLOBAL SETTINGS
-ROOT = osp.join(os.getenv('VTRDATA'), 'boreas/sequences')
-SEQUENCES = [
-    ["boreas-2020-12-01-13-26"],
-    ["boreas-2020-12-18-13-44"],
-    ["boreas-2021-01-15-12-17"],
-    ["boreas-2021-03-02-13-38"],
-    ["boreas-2021-04-15-18-55"],
-]
-
-## OPTIONS
-SEQUENCE = 0
+    ax.set_ylabel(r"$|\hat{\theta}_x - \theta_x|$ [$rad$]".replace("x", labels[i]))
+    ax.set_ylim([0, 0.1])
 
 def main(data_dir):
   data_dir = osp.normpath(data_dir)
@@ -103,59 +103,72 @@ def main(data_dir):
   print("Dataset Sequences:", dataset_seqs)
   dataset = BoreasDataset(dataset_root, dataset_seqs)
 
-  # Ground truth is provided w.r.t sensor, so we set sensor to vehicle
-  # transform to identity
-  yfwd2xfwd = np.array([
-      [0, 1, 0, 0],
-      [-1, 0, 0, 0],
-      [0, 0, 1, 0],
-      [0, 0, 0, 1],
-  ])
-  T_robot_lidar = yfwd2xfwd @ dataset.sequences[SEQUENCE].calib.T_applanix_lidar  ## Note: use a single calibration data
-  # T_robot_lidar = dataset.sequences[SEQUENCE].calib.T_applanix_lidar
-  T_lidar_robot = npla.inv(T_robot_lidar)
+  # generate ground truth pose dictionary
+  ground_truth_poses = dict()
+  for sequence in dataset.sequences:
+    # Ground truth is provided w.r.t sensor, so we set sensor to vehicle
+    # transform to identity
+    yfwd2xfwd = np.array([
+        [0, 1, 0, 0],
+        [-1, 0, 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1],
+    ])
+    T_robot_lidar = yfwd2xfwd @ sequence.calib.T_applanix_lidar
+    # T_robot_lidar = sequence.calib.T_applanix_lidar
+    T_lidar_robot = npla.inv(T_robot_lidar)
 
-  # build dictionary
-  precision = 1e7  # divide by this number to ensure always find the timestamp
-  ground_truth_poses = { int(int(frame.timestamp * 1e9) / precision): frame.pose @ T_lidar_robot for frame in dataset.lidar_frames }
+    # build dictionary
+    precision = 1e7  # divide by this number to ensure always find the timestamp
+    ground_truth_poses.update({ int(int(frame.timestamp * 1e9) / precision): frame.pose @ T_lidar_robot for frame in sequence.lidar_frames })
 
   print("Loaded number of poses: ", len(ground_truth_poses))
 
-  for fid, loc_input in enumerate(loc_inputs):
-    result_dir = osp.join(root_dir, odo_input, loc_input, "boreas/graph/run_000001/data")
+  fid = 0
+  for i, loc_input in enumerate(loc_inputs):
+    loc_dir = osp.join(root_dir, odo_input, loc_input)
+    trials = list(os.listdir(loc_dir))
+    trials.sort()
 
-    # get bag file
-    bag_file = '{0}/{1}/{1}_0.db3'.format(osp.abspath(result_dir), "localization_result")
+    for j, trial in enumerate(trials):
+      result_dir = osp.join(loc_dir, trial, "graph/run_000001/data")
+      print("Looking at result directory:", result_dir)
 
-    parser = BagFileParser(bag_file)
-    messages = parser.get_bag_messages("localization_result")
+      # get bag file
+      bag_file = '{0}/{1}/{1}_0.db3'.format(osp.abspath(result_dir), "localization_result")
 
-    errors = np.empty((len(messages), 6))
-    for i, message in enumerate(messages):
-      if not int(message[1].timestamp / precision) in ground_truth_poses.keys():
-        print("WARNING: time stamp not found 1: ", int(message[1].timestamp / precision))
-        continue
-      if not int(message[1].vertex_timestamp / precision) in ground_truth_poses.keys():
-        print("WARNING: time stamp not found 2: ", int(message[1].vertex_timestamp / precision))
-        continue
+      parser = BagFileParser(bag_file)
+      messages = parser.get_bag_messages("localization_result")
 
-      robot_timestamp = int(message[1].timestamp / precision)
-      vertex_timestamp = int(message[1].vertex_timestamp / precision)
-      T_robot_vertex_vec = np.array(message[1].t_robot_vertex.xi)
+      errors = np.empty((len(messages), 6))
+      for i, message in enumerate(messages):
+        if not int(message[1].timestamp / precision) in ground_truth_poses.keys():
+          print("WARNING: time stamp not found 1: ", int(message[1].timestamp / precision))
+          continue
+        if not int(message[1].vertex_timestamp / precision) in ground_truth_poses.keys():
+          print("WARNING: time stamp not found 2: ", int(message[1].vertex_timestamp / precision))
+          continue
 
-      # inv(T_enu_robot) @ T_enu_vertex = T_robot_vertex
-      T_robot_vertex = npla.inv(ground_truth_poses[robot_timestamp]) @ ground_truth_poses[vertex_timestamp]
-      T_robot_vertex_vec_gt = se3op.tran2vec(T_robot_vertex).flatten()
+        robot_timestamp = int(message[1].timestamp / precision)
+        vertex_timestamp = int(message[1].vertex_timestamp / precision)
+        T_robot_vertex_vec = np.array(message[1].t_robot_vertex.xi)
 
-      # compute error
-      errors[i, :] = T_robot_vertex_vec_gt - T_robot_vertex_vec
+        # inv(T_enu_robot) @ T_enu_vertex = T_robot_vertex
+        T_robot_vertex = npla.inv(ground_truth_poses[robot_timestamp]) @ ground_truth_poses[vertex_timestamp]
+        T_robot_vertex_vec_gt = se3op.tran2vec(T_robot_vertex).flatten()
 
-    print(np.mean(np.abs(errors), axis=0))
+        # compute error
+        errors[i, :] = T_robot_vertex_vec_gt - T_robot_vertex_vec
 
-    fig = plt.figure(fid)
-    plot_error(fig, errors)
-    os.makedirs(odo_input, exist_ok=True)
-    fig.savefig(osp.join(odo_input, loc_input+'.png'))
+      print(np.mean(np.abs(errors), axis=0))
+
+      fig = plt.figure()
+      plot_error(fig, errors)
+      fig.suptitle(odo_input + " <- " + loc_input + " : " + trial, fontsize=16)
+      os.makedirs(osp.join(odo_input, loc_input), exist_ok=True)
+      fig.savefig(osp.join(odo_input, loc_input, trial+'.png'))
+
+      fid += 1
 
   # plt.show()
 
