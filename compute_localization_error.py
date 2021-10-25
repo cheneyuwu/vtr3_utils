@@ -15,7 +15,7 @@ from rclpy.serialization import deserialize_message
 from pyboreas import BoreasDataset
 from pylgmath import se3op
 
-matplotlib.use("TkAgg")
+matplotlib.use("Agg")  # matplotlib.use("TkAgg")
 
 
 class BagFileParser():
@@ -87,15 +87,21 @@ SEQUENCES = [
 SEQUENCE = 0
 
 def main(data_dir):
-  # get bag file
-  bag_file = '{0}/{1}/{1}_0.db3'.format(osp.abspath(data_dir), "localization_result")
+  data_dir = osp.normpath(data_dir)
+  root_dir = osp.dirname(data_dir)
+  odo_input = osp.basename(data_dir)
+  loc_inputs = [i for i in os.listdir(data_dir) if i != odo_input]
+  loc_inputs.sort()
+  print("Root Directory:", root_dir)
+  print("Odometry:", odo_input)
+  print("Localization:", loc_inputs)
 
-  parser = BagFileParser(bag_file)
-  messages = parser.get_bag_messages("localization_result")
-
-
-  # dataset
-  dataset = BoreasDataset(ROOT, SEQUENCES)
+  # dataset directory and necessary sequences to load
+  dataset_root = osp.join(os.getenv('VTRDATA'), 'boreas/sequences')
+  dataset_seqs = [[x] for x in [odo_input, *loc_inputs]]
+  print("Dataset Root:", dataset_root)
+  print("Dataset Sequences:", dataset_seqs)
+  dataset = BoreasDataset(dataset_root, dataset_seqs)
 
   # Ground truth is provided w.r.t sensor, so we set sensor to vehicle
   # transform to identity
@@ -114,32 +120,41 @@ def main(data_dir):
 
   print("Loaded number of poses: ", len(ground_truth_poses))
 
-  errors = np.empty((len(messages), 6))
-  for i, message in enumerate(messages):
-    if not int(message[1].timestamp / 1e6) in ground_truth_poses.keys():
-      print("WARNING: time stamp not found 1: ", int(message[1].timestamp / 1e6))
-      continue
-    if not int(message[1].vertex_timestamp / 1e6) in ground_truth_poses.keys():
-      print("WARNING: time stamp not found 2: ", int(message[1].vertex_timestamp / 1e6))
-      continue
+  for fid, loc_input in enumerate(loc_inputs):
+    result_dir = osp.join(root_dir, odo_input, loc_input, "boreas/graph/run_000001/data")
 
-    robot_timestamp = int(message[1].timestamp / 1e6)
-    vertex_timestamp = int(message[1].vertex_timestamp / 1e6)
-    T_robot_vertex_vec = np.array(message[1].t_robot_vertex.xi)
+    # get bag file
+    bag_file = '{0}/{1}/{1}_0.db3'.format(osp.abspath(result_dir), "localization_result")
 
-    # inv(T_enu_robot) @ T_enu_vertex = T_robot_vertex
-    T_robot_vertex = npla.inv(ground_truth_poses[robot_timestamp]) @ ground_truth_poses[vertex_timestamp]
-    T_robot_vertex_vec_gt = se3op.tran2vec(T_robot_vertex).flatten()
+    parser = BagFileParser(bag_file)
+    messages = parser.get_bag_messages("localization_result")
 
-    # compute error
-    errors[i, :] = T_robot_vertex_vec_gt - T_robot_vertex_vec
+    errors = np.empty((len(messages), 6))
+    for i, message in enumerate(messages):
+      if not int(message[1].timestamp / 1e6) in ground_truth_poses.keys():
+        print("WARNING: time stamp not found 1: ", int(message[1].timestamp / 1e6))
+        continue
+      if not int(message[1].vertex_timestamp / 1e6) in ground_truth_poses.keys():
+        print("WARNING: time stamp not found 2: ", int(message[1].vertex_timestamp / 1e6))
+        continue
 
-  print(np.mean(np.abs(errors), axis=0))
+      robot_timestamp = int(message[1].timestamp / 1e6)
+      vertex_timestamp = int(message[1].vertex_timestamp / 1e6)
+      T_robot_vertex_vec = np.array(message[1].t_robot_vertex.xi)
 
+      # inv(T_enu_robot) @ T_enu_vertex = T_robot_vertex
+      T_robot_vertex = npla.inv(ground_truth_poses[robot_timestamp]) @ ground_truth_poses[vertex_timestamp]
+      T_robot_vertex_vec_gt = se3op.tran2vec(T_robot_vertex).flatten()
 
-  plot_error(plt.figure(0), errors)
-  image_name = datetime.now().strftime("%m-%d-%H-%M-%S")
-  plt.savefig(image_name+'.png')
+      # compute error
+      errors[i, :] = T_robot_vertex_vec_gt - T_robot_vertex_vec
+
+    print(np.mean(np.abs(errors), axis=0))
+
+    fig = plt.figure(fid)
+    plot_error(fig, errors)
+    os.makedirs(odo_input, exist_ok=True)
+    fig.savefig(osp.join(odo_input, loc_input+'.png'))
 
   # plt.show()
 
