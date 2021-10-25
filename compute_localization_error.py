@@ -5,6 +5,7 @@ import numpy as np
 import numpy.linalg as npla
 import matplotlib
 import matplotlib.pyplot as plt
+from datetime import datetime
 
 import sqlite3
 from rosidl_runtime_py.utilities import get_message
@@ -137,7 +138,10 @@ def main(data_dir):
 
 
   plot_error(plt.figure(0), errors)
-  plt.show()
+  image_name = datetime.now().strftime("%m-%d-%H-%M-%S")
+  plt.savefig(image_name+'.png')
+
+  # plt.show()
 
 
 
