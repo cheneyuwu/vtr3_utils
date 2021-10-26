@@ -132,6 +132,8 @@ def main(data_dir):
 
     for j, trial in enumerate(trials):
       result_dir = osp.join(loc_dir, trial, "graph/run_000001/data")
+      if not osp.exists(result_dir):
+        continue
       print("Looking at result directory:", result_dir)
 
       # get bag file
