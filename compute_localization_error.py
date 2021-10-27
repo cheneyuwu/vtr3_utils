@@ -1,6 +1,7 @@
 import os
 import os.path as osp
 import argparse
+from typing import List, Tuple
 import numpy as np
 import numpy.linalg as npla
 import matplotlib
@@ -34,9 +35,9 @@ class BagFileParser():
 
     ## create a message (id, topic, type) map
     topics_data = self.cursor.execute("SELECT id, name, type FROM topics").fetchall()
-    print(topics_data)
+    # print(topics_data)
     topics_data = [(1, "localization_result", "vtr_msgs/msg/LocalizationResult")]  # need to add this type info manually
-    print(topics_data)
+    # print(topics_data)
     self.topic_type = {name_of: type_of for id_of, name_of, type_of in topics_data}
     self.topic_id = {name_of: id_of for id_of, name_of, type_of in topics_data}
     self.topic_msg_message = {name_of: get_message(type_of) for id_of, name_of, type_of in topics_data}
@@ -86,6 +87,27 @@ def plot_error(fig, errors):
     ax.set_ylabel(r"$|\hat{\theta}_x - \theta_x|$ [$rad$]".replace("x", labels[i]))
     ax.set_ylim([0, 0.1])
 
+def plot_error_box(fig, errors: List[Tuple[str, np.ndarray]]):
+  plot_number = 611
+  fig.set_size_inches(8, 12)
+  fig.subplots_adjust(left=0.16, right=0.95, bottom=0.1, top=0.93, wspace=0.7, hspace=0.7)
+
+  labels = ['x', 'y', 'z', 'x', 'y', 'z']
+  for i in range(3):
+    ax = fig.add_subplot(plot_number + i)
+    # plot the errors
+    ax.boxplot([error[:, i] for _, error in errors])
+    ax.set_xticklabels([x for x, _ in errors])
+    ax.set_ylabel(r"$|\hat{r}_x - r_x|$ [$m$]".replace("x", labels[i]))
+    # ax.set_ylim([-1, 1])
+  for i in range(3, 6):
+    ax = fig.add_subplot(plot_number + i)
+    # plot the errors
+    ax.boxplot([error[:, i] for _, error in errors])
+    ax.set_xticklabels([x for x, _ in errors])
+    ax.set_ylabel(r"$|\hat{\theta}_x - \theta_x|$ [$rad$]".replace("x", labels[i]))
+    # ax.set_ylim([-0.1, 0.1])
+
 def main(data_dir):
   data_dir = osp.normpath(data_dir)
   root_dir = osp.dirname(data_dir)
@@ -124,11 +146,14 @@ def main(data_dir):
 
   print("Loaded number of poses: ", len(ground_truth_poses))
 
-  fid = 0
+  date2trial_map = dict()  # dict with key=loc_input, value=[(trial, error), ...]
+  trial2date_map = dict()  # dict with key=trial, value=[(loc_input, error), ...]
   for i, loc_input in enumerate(loc_inputs):
     loc_dir = osp.join(root_dir, odo_input, loc_input)
     trials = list(os.listdir(loc_dir))
     trials.sort()
+
+    date2trial_map[loc_input] = list()
 
     for j, trial in enumerate(trials):
       result_dir = osp.join(loc_dir, trial, "graph/run_000001/data")
@@ -164,13 +189,27 @@ def main(data_dir):
 
       print(np.mean(np.abs(errors), axis=0))
 
+      #
+      date2trial_map[loc_input].append((trial.replace("boreas", ""), errors))
+      if trial not in trial2date_map.keys():
+        trial2date_map[trial] = list()
+      trial2date_map[trial].append((loc_input, errors))
+
+
       fig = plt.figure()
       plot_error(fig, errors)
       fig.suptitle(odo_input + " <- " + loc_input + " : " + trial, fontsize=16)
       os.makedirs(osp.join(odo_input, loc_input), exist_ok=True)
       fig.savefig(osp.join(odo_input, loc_input, trial+'.png'))
 
-      fid += 1
+  # plot box plot based on the two maps
+  os.makedirs(odo_input, exist_ok=True)
+  for k, v in date2trial_map.items():
+    fig = plt.figure()
+    plot_error_box(fig, v)
+    fig.suptitle(odo_input + " <- " + k, fontsize=16)
+    fig.savefig(osp.join(odo_input, k+'_box.png'))
+
 
   # plt.show()
 
