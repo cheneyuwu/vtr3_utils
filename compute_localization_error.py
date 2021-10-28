@@ -178,14 +178,23 @@ def main(data_dir):
 
         robot_timestamp = int(message[1].timestamp / precision)
         vertex_timestamp = int(message[1].vertex_timestamp / precision)
-        T_robot_vertex_vec = np.array(message[1].t_robot_vertex.xi)
 
+        T_robot_vertex_vec = np.array(message[1].t_robot_vertex.xi)[..., None]
+        T_robot_vertex = se3op.vec2tran(T_robot_vertex_vec)
         # inv(T_enu_robot) @ T_enu_vertex = T_robot_vertex
-        T_robot_vertex = npla.inv(ground_truth_poses[robot_timestamp]) @ ground_truth_poses[vertex_timestamp]
-        T_robot_vertex_vec_gt = se3op.tran2vec(T_robot_vertex).flatten()
-
+        T_vertex_robot_gt = npla.inv(ground_truth_poses[vertex_timestamp]) @ ground_truth_poses[robot_timestamp]
         # compute error
-        errors[i, :] = T_robot_vertex_vec_gt - T_robot_vertex_vec
+        errors[i, :] = se3op.tran2vec(T_robot_vertex @ T_vertex_robot_gt).flatten()
+
+
+
+        # TODO remove the following
+        # T_robot_vertex_vec = np.array(message[1].t_robot_vertex.xi)
+        # # inv(T_enu_robot) @ T_enu_vertex = T_robot_vertex
+        # T_robot_vertex = npla.inv(ground_truth_poses[robot_timestamp]) @ ground_truth_poses[vertex_timestamp]
+        # T_robot_vertex_vec_gt = se3op.tran2vec(T_robot_vertex).flatten()
+        # # compute error
+        # errors[i, :] = T_robot_vertex_vec_gt - T_robot_vertex_vec
 
       print(np.mean(np.abs(errors), axis=0))
 
