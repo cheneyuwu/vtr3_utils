@@ -73,7 +73,7 @@ def plot_error(fig, errors):
     # plot the mean
     ax.plot(np.ones_like(errors[:, i]) * np.mean(errors[:, i]), '-r', linewidth=2.0)
     ax.set_title("mean: " + str(np.mean(errors[:, i])) + ", var: " + str(np.var(errors[:, i])))
-    ax.set_xlabel(r"$t$ [$s$]")
+    ax.set_xlabel(r"frame")
     ax.set_ylabel(r"$|\hat{r}_x - r_x|$ [$m$]".replace("x", labels[i]))
     ax.set_ylim([0, 1])
   for i in range(3, 6):
@@ -83,7 +83,7 @@ def plot_error(fig, errors):
     # plot the mean
     ax.plot(np.ones_like(errors[:, i]) * np.mean(errors[:, i]), '-r', linewidth=2.0)
     ax.set_title("mean: " + str(np.mean(errors[:, i])) + ", var: " + str(np.var(errors[:, i])))
-    ax.set_xlabel(r"$t$ [$s$]")
+    ax.set_xlabel(r"frame")
     ax.set_ylabel(r"$|\hat{\theta}_x - \theta_x|$ [$rad$]".replace("x", labels[i]))
     ax.set_ylim([0, 0.1])
 
@@ -98,14 +98,14 @@ def plot_error_box(fig, errors: List[Tuple[str, np.ndarray]], proc_func = lambda
     # plot the errors
     ax.boxplot([proc_func(error[:, i]) for _, error in errors])
     ax.set_xticklabels([x for x, _ in errors], rotation=-25)
-    ax.set_ylabel(ylabel.replace("tran", "r").replace("unit", "m").replace("dir", labels[i]))
+    ax.set_ylabel(ylabel.replace(r"tran", r"r").replace(r"unit", r"m").replace(r"dir", labels[i]))
     # ax.set_ylim([-1, 1])
   for i in range(3, 6):
     ax = fig.add_subplot(plot_number + i)
     # plot the errors
     ax.boxplot([proc_func(error[:, i]) for _, error in errors])
     ax.set_xticklabels([x for x, _ in errors], rotation=-25)
-    ax.set_ylabel(ylabel.replace("tran", "\theta").replace("unit", "rad").replace("dir", labels[i]))
+    ax.set_ylabel(ylabel.replace(r"tran", r"\theta").replace(r"unit", r"rad").replace(r"dir", labels[i]))
     # ax.set_ylim([-0.1, 0.1])
 
 def main(data_dir):
@@ -214,12 +214,12 @@ def main(data_dir):
     # error
     fig = plt.figure()
     plot_error_box(fig, v)
-    fig.suptitle("point map version:" + k.replace("boreas.", ""), fontsize=16)
+    fig.suptitle(odo_input + " point map version:" + k.replace("boreas.", ""), fontsize=16)
     fig.savefig(osp.join(odo_input, k+'_box.png'))
     # np.abs(err)
     fig = plt.figure()
     plot_error_box(fig, v, np.abs, r"$|\hat{tran}_dir - tran_dir|$ [$unit$]")
-    fig.suptitle("point map version:" + k.replace("boreas.", ""), fontsize=16)
+    fig.suptitle(odo_input + " point map version:" + k.replace("boreas.", ""), fontsize=16)
     fig.savefig(osp.join(odo_input, k+'_abs_box.png'))
 
 
