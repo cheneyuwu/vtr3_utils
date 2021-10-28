@@ -87,25 +87,25 @@ def plot_error(fig, errors):
     ax.set_ylabel(r"$|\hat{\theta}_x - \theta_x|$ [$rad$]".replace("x", labels[i]))
     ax.set_ylim([0, 0.1])
 
-def plot_error_box(fig, errors: List[Tuple[str, np.ndarray]]):
+def plot_error_box(fig, errors: List[Tuple[str, np.ndarray]], proc_func = lambda x: x, ylabel=r"$\hat{tran}_dir - tran_dir$ [$unit$]"):
   plot_number = 611
-  fig.set_size_inches(8, 12)
+  fig.set_size_inches(2 + 1.4 * len(errors), 12)
   fig.subplots_adjust(left=0.16, right=0.95, bottom=0.1, top=0.93, wspace=0.7, hspace=0.7)
 
   labels = ['x', 'y', 'z', 'x', 'y', 'z']
   for i in range(3):
     ax = fig.add_subplot(plot_number + i)
     # plot the errors
-    ax.boxplot([error[:, i] for _, error in errors])
-    ax.set_xticklabels([x for x, _ in errors])
-    ax.set_ylabel(r"$|\hat{r}_x - r_x|$ [$m$]".replace("x", labels[i]))
+    ax.boxplot([proc_func(error[:, i]) for _, error in errors])
+    ax.set_xticklabels([x for x, _ in errors], rotation=-25)
+    ax.set_ylabel(ylabel.replace("tran", "r").replace("unit", "m").replace("dir", labels[i]))
     # ax.set_ylim([-1, 1])
   for i in range(3, 6):
     ax = fig.add_subplot(plot_number + i)
     # plot the errors
-    ax.boxplot([error[:, i] for _, error in errors])
-    ax.set_xticklabels([x for x, _ in errors])
-    ax.set_ylabel(r"$|\hat{\theta}_x - \theta_x|$ [$rad$]".replace("x", labels[i]))
+    ax.boxplot([proc_func(error[:, i]) for _, error in errors])
+    ax.set_xticklabels([x for x, _ in errors], rotation=-25)
+    ax.set_ylabel(ylabel.replace("tran", "\theta").replace("unit", "rad").replace("dir", labels[i]))
     # ax.set_ylim([-0.1, 0.1])
 
 def main(data_dir):
@@ -190,10 +190,10 @@ def main(data_dir):
       print(np.mean(np.abs(errors), axis=0))
 
       #
-      date2trial_map[loc_input].append((trial.replace("boreas", ""), errors))
+      date2trial_map[loc_input].append((trial.replace("boreas.", ""), errors))
       if trial not in trial2date_map.keys():
         trial2date_map[trial] = list()
-      trial2date_map[trial].append((loc_input, errors))
+      trial2date_map[trial].append((loc_input.replace("boreas-", ""), errors))
 
 
       fig = plt.figure()
@@ -202,13 +202,25 @@ def main(data_dir):
       os.makedirs(osp.join(odo_input, loc_input), exist_ok=True)
       fig.savefig(osp.join(odo_input, loc_input, trial+'.png'))
 
-  # plot box plot based on the two maps
-  os.makedirs(odo_input, exist_ok=True)
-  for k, v in date2trial_map.items():
+  # # plot box plot based on the two maps
+  # os.makedirs(odo_input, exist_ok=True)
+  # for k, v in date2trial_map.items():
+  #   fig = plt.figure()
+  #   plot_error_box(fig, v)
+  #   fig.suptitle(odo_input + " <- " + k, fontsize=16)
+  #   fig.savefig(osp.join(odo_input, k+'_box.png'))
+
+  for k, v in trial2date_map.items():
+    # error
     fig = plt.figure()
     plot_error_box(fig, v)
-    fig.suptitle(odo_input + " <- " + k, fontsize=16)
+    fig.suptitle("point map version:" + k.replace("boreas.", ""), fontsize=16)
     fig.savefig(osp.join(odo_input, k+'_box.png'))
+    # np.abs(err)
+    fig = plt.figure()
+    plot_error_box(fig, v, np.abs, r"$|\hat{tran}_dir - tran_dir|$ [$unit$]")
+    fig.suptitle("point map version:" + k.replace("boreas.", ""), fontsize=16)
+    fig.savefig(osp.join(odo_input, k+'_abs_box.png'))
 
 
   # plt.show()
