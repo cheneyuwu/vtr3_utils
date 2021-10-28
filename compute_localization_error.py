@@ -202,13 +202,20 @@ def main(data_dir):
       os.makedirs(osp.join(odo_input, loc_input), exist_ok=True)
       fig.savefig(osp.join(odo_input, loc_input, trial+'.png'))
 
-  # # plot box plot based on the two maps
-  # os.makedirs(odo_input, exist_ok=True)
-  # for k, v in date2trial_map.items():
-  #   fig = plt.figure()
-  #   plot_error_box(fig, v)
-  #   fig.suptitle(odo_input + " <- " + k, fontsize=16)
-  #   fig.savefig(osp.join(odo_input, k+'_box.png'))
+  # plot box plot based on the two maps
+  os.makedirs(odo_input, exist_ok=True)
+
+  for k, v in date2trial_map.items():
+    # error
+    fig = plt.figure()
+    plot_error_box(fig, v)
+    fig.suptitle(odo_input + " <- " + k, fontsize=16)
+    fig.savefig(osp.join(odo_input, k+'_box.png'))
+    # np.abs(error)
+    fig = plt.figure()
+    plot_error_box(fig, v, np.abs, r"$|\hat{tran}_dir - tran_dir|$ [$unit$]")
+    fig.suptitle(odo_input + " <- " + k, fontsize=16)
+    fig.savefig(osp.join(odo_input, k+'_abs_box.png'))
 
   for k, v in trial2date_map.items():
     # error

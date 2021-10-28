@@ -134,8 +134,8 @@ def main(data_dir):
     gs = gridspec.GridSpec(1, 2, width_ratios=[1, 2])
     # fig.subplots_adjust(left=0.16, right=0.95, bottom=0.1, top=0.93, wspace=0.7, hspace=0.7)
 
-    ax1 = fig.add_subplot(gs[0]); ax1.set_ylim(top=8000); bin_max1 = 40; hist_bins1 = np.linspace(0, bin_max1, 80)
-    ax2 = fig.add_subplot(gs[1]); ax2.set_ylim(top=800); bin_max2 = 40; hist_bins2 = np.linspace(0, bin_max2, 80)
+    ax1 = fig.add_subplot(gs[0]); ax1.set_ylim(top=12000); bin_max1 = 30; hist_bins1 = np.linspace(0, bin_max1, 100)
+    ax2 = fig.add_subplot(gs[1]); ax2.set_ylim(top=2000); bin_max2 = 10; hist_bins2 = np.linspace(0, bin_max2, 100)
 
     bar_containers1 = []
     bar_containers2 = []
@@ -145,9 +145,9 @@ def main(data_dir):
       _, _, bar_container2 = ax2.hist(np.random.randn(1000), hist_bins2, lw=1, alpha=0.5, label=trial)
       bar_containers2.append(bar_container2)
 
-    ax1.set_xlabel("nearest neighbor planar distance [m]")
+    ax1.set_xlabel("planar distance to NN in point map [m], bin size 0.3m")
     ax1.set_ylabel("number of points in scan")
-    ax2.set_xlabel("nearest neighbor planar distance [m]")
+    ax2.set_xlabel("planar distance to NN in point map [m], bin size 0.1m")
     ax2.set_ylabel("number of points in scan")
 
     ax1.legend()
@@ -193,7 +193,7 @@ def main(data_dir):
 
         return updated
 
-    ani = animation.FuncAnimation(fig, animate, enumerate(zip(*[x[1] for x in trial_msg_iter])), repeat=False, blit=True, save_count=10400, interval=50)
+    ani = animation.FuncAnimation(fig, animate, enumerate(zip(*[x[1] for x in trial_msg_iter])), repeat=False, blit=True, save_count=10400, interval=200)
     # plt.show()
     ani.save(osp.join(odo_input, loc_input, "icp_error.mp4"))
 
