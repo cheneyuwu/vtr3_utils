@@ -12,6 +12,13 @@ import sqlite3
 from rosidl_runtime_py.utilities import get_message
 from rclpy.serialization import deserialize_message
 
+from pylgmath import so3op, se3op, Transformation
+from pysteam.trajectory import Time, TrajectoryInterface
+from pysteam.state import TransformStateVar, VectorSpaceStateVar
+from pysteam.problem import OptimizationProblem, StaticNoiseModel, L2LossFunc, WeightedLeastSquareCostTerm
+from pysteam.solver import GaussNewtonSolver
+from pysteam.evaluator import TransformStateEvaluator, PointToPointErrorEval
+
 
 class BagFileParser():
 
@@ -46,6 +53,7 @@ class BagFileParser():
 
     # Deserialise all and timestamp them
     return [(timestamp, deserialize_message(data, self.topic_msg_message[topic_name])) for timestamp, data in rows]
+
 
 def load_gps(bag_file, projection, start_gps_coord, start_xy_coord):
 
@@ -109,7 +117,55 @@ def load_gps(bag_file, projection, start_gps_coord, start_xy_coord):
   if num_large_covariance > 0:
     print("=> Large cov {}: {}, total: {}".format(osp.dirname(bag_file), num_large_covariance, len(messages)))
 
-  return gps_poses, gps_good_segments, False # bool(num_large_covariance > 0)
+  return gps_poses, gps_good_segments, False  # bool(num_large_covariance > 0)
+
+
+def gps_smoothing(gps_poses):
+  print("=> Generating steam trajectory, given measurement size:", len(gps_poses['x']))
+
+  num_states = len(gps_poses['x'])
+  # convert to gps measurements
+  gps_meas = np.empty((num_states, 4, 1))
+  gps_meas[:, 0, 0] = gps_poses['x']
+  gps_meas[:, 1, 0] = gps_poses['y']
+  gps_meas[:, 2, 0] = 0.0  # note: planar assumption!
+  gps_meas[:, 3, 0] = 1.0  # homogeneous coordinates
+
+  states = []
+  for i in range(num_states):
+    # states with initial conditions and associated timestamps
+    # T_ba = T_k0 where 0 can be some global frame (e.g. UTM) and k is the vehicle/robot frame at time k
+    states.append([
+        gps_poses['timestamp'][i],
+        Transformation(C_ba=np.eye(3), r_ba_in_a=gps_meas[i, :3]),
+        np.zeros((6, 1)),
+    ])
+
+  # wrap states with corresponding steam state variables (no copying!)
+  state_vars = [(t, TransformStateVar(T_vi), VectorSpaceStateVar(w_iv_inv)) for t, T_vi, w_iv_inv in states]
+
+  Qc_inv = np.diag(1 / np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]))  # smoothing factor diagonal
+  traj = TrajectoryInterface(Qc_inv=Qc_inv)
+  for t, T_vi, w_iv_inv in state_vars:
+    traj.add_knot(time=Time(t), T_k0=TransformStateEvaluator(T_vi), w_0k_ink=w_iv_inv)
+
+  cost_terms = []
+  # use a shared L2 loss function and noise model for all cost terms
+  loss_func = L2LossFunc()
+  noise_model = StaticNoiseModel(np.eye(3), "information")
+  for i in range(num_states):
+    error_func = PointToPointErrorEval(T_rq=TransformStateEvaluator(state_vars[i][1]), reference=np.array([[0, 0, 0, 1]]).T, query=fake_meas[i])
+    cost_terms.append(WeightedLeastSquareCostTerm(error_func, noise_model, loss_func))
+
+  opt_prob = OptimizationProblem()
+  opt_prob.add_state_var(*[v for state_var in state_vars for v in state_var[1:]])
+  opt_prob.add_cost_term(*traj.get_prior_cost_terms())
+  opt_prob.add_cost_term(*cost_terms)
+
+  solver = GaussNewtonSolver(opt_prob, verbose=True)
+  solver.optimize()
+
+  return traj
 
 
 def load_gps_poses(data_dir):
@@ -131,10 +187,12 @@ def load_gps_poses(data_dir):
   for rosbag_dir in rosbag_dirs:
     bag_file = '{0}/{1}/{1}_0.db3'.format(data_dir, rosbag_dir)
 
-
     gps_poses, gps_good_segments, bad_run = load_gps(bag_file, projection, start_gps_coord, start_xy_coord)
-    if gps_poses is None:
+    if len(gps_poses['x']) == 0:
       continue
+
+    # create a trajectory to interpolate poses
+    trajectory = gps_smoothing(gps_poses)
 
     tot_gps_poses.append(gps_poses)
     tot_gps_good_segments.append(gps_good_segments)
@@ -156,7 +214,10 @@ def plot_data(tot_gps_poses, tot_gps_good_segments, gps_runs, bad_gps_runs, data
 
     p = None
     for j in range(len(tot_gps_good_segments[i]["x"])):
-      p = plt.plot(tot_gps_good_segments[i]["x"][j], tot_gps_good_segments[i]["y"][j], linewidth=2, color='C{}'.format(i))
+      p = plt.plot(tot_gps_good_segments[i]["x"][j],
+                   tot_gps_good_segments[i]["y"][j],
+                   linewidth=2,
+                   color='C{}'.format(i))
 
     if p is not None:
       plot_lines.append(p[0])
