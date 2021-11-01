@@ -25,8 +25,7 @@ class BagFileParser():
     try:
       self.conn = sqlite3.connect(bag_file)
     except Exception as e:
-      print(e)
-      print('could not connect')
+      print('Could not connect: ', e)
       raise Exception('could not connect')
 
     self.cursor = self.conn.cursor()
@@ -35,9 +34,7 @@ class BagFileParser():
 
     ## create a message (id, topic, type) map
     topics_data = self.cursor.execute("SELECT id, name, type FROM topics").fetchall()
-    # print(topics_data)
-    topics_data = [(1, "localization_result", "vtr_msgs/msg/LocalizationResult")]  # need to add this type info manually
-    # print(topics_data)
+
     self.topic_type = {name_of: type_of for id_of, name_of, type_of in topics_data}
     self.topic_id = {name_of: id_of for id_of, name_of, type_of in topics_data}
     self.topic_msg_message = {name_of: get_message(type_of) for id_of, name_of, type_of in topics_data}
@@ -47,14 +44,39 @@ class BagFileParser():
 
   # Return messages as list of tuples [(timestamp0, message0), (timestamp1, message1), ...]
   def get_bag_messages(self, topic_name):
-
     topic_id = self.topic_id[topic_name]
-
-    # Get from the db
     rows = self.cursor.execute("SELECT timestamp, data FROM messages WHERE topic_id = {}".format(topic_id)).fetchall()
-
-    # Deserialise all and timestamp them
     return [(timestamp, deserialize_message(data, self.topic_msg_message[topic_name])) for timestamp, data in rows]
+
+
+def get_lidar_poses(root: str, sequences: List[str]):
+
+  # hardcoded transforms
+  T_robot_gps = np.array([[1, 0, 0, 0.6],
+                          [0, 1, 0, 0],
+                          [0, 0, 1, 0.52],
+                          [0, 0, 0, 1]])
+  T_robot_lidar = np.array([[1, 0, 0, 0.06],
+                            [0, 1, 0, 0],
+                            [0, 0, 1, 1.45],
+                            [0, 0, 0, 1]])
+
+  T_gps_lidar = npla.inv(T_robot_gps) @ T_robot_lidar
+
+  time_T_global_lidar = dict()
+  for seq in sequences:
+    filename = osp.join(root, seq, "lidar_ground_truth.csv")
+    if not osp.exists(filename):
+      continue
+
+    time_xi_k0 = np.loadtxt(filename, delimiter=',')
+    timestamps = time_xi_k0[:, 0]
+    T_global_gps = se3op.vec2tran(time_xi_k0[:, 1:, None])
+    T_global_lidar = T_global_gps @ T_gps_lidar
+    for i in range(len(timestamps)):
+      time_T_global_lidar[int(timestamps[i])] = T_global_lidar[i]
+
+  return time_T_global_lidar
 
 
 def plot_error(fig, errors):
@@ -119,30 +141,11 @@ def main(data_dir):
   print("Localization:", loc_inputs)
 
   # dataset directory and necessary sequences to load
-  dataset_root = osp.join(os.getenv('VTRDATA'), 'boreas/sequences')
-  dataset_seqs = [[x] for x in [odo_input, *loc_inputs]]
+  dataset_root = osp.join(os.getenv('VTRDATA'), 'utias_2021_parkinglot_rosbag')
+  dataset_seqs = [odo_input, *loc_inputs]
   print("Dataset Root:", dataset_root)
   print("Dataset Sequences:", dataset_seqs)
-  dataset = BoreasDataset(dataset_root, dataset_seqs)
-
-  # generate ground truth pose dictionary
-  ground_truth_poses = dict()
-  for sequence in dataset.sequences:
-    # Ground truth is provided w.r.t sensor, so we set sensor to vehicle
-    # transform to identity
-    yfwd2xfwd = np.array([
-        [0, 1, 0, 0],
-        [-1, 0, 0, 0],
-        [0, 0, 1, 0],
-        [0, 0, 0, 1],
-    ])
-    T_robot_lidar = yfwd2xfwd @ sequence.calib.T_applanix_lidar
-    # T_robot_lidar = sequence.calib.T_applanix_lidar
-    T_lidar_robot = npla.inv(T_robot_lidar)
-
-    # build dictionary
-    precision = 1e7  # divide by this number to ensure always find the timestamp
-    ground_truth_poses.update({ int(int(frame.timestamp * 1e9) / precision): frame.pose @ T_lidar_robot for frame in sequence.lidar_frames })
+  ground_truth_poses = get_lidar_poses(dataset_root, dataset_seqs)
 
   print("Loaded number of poses: ", len(ground_truth_poses))
 
@@ -169,15 +172,15 @@ def main(data_dir):
 
       errors = np.empty((len(messages), 6))
       for i, message in enumerate(messages):
-        if not int(message[1].timestamp / precision) in ground_truth_poses.keys():
-          print("WARNING: time stamp not found 1: ", int(message[1].timestamp / precision))
+        if not int(message[1].timestamp) in ground_truth_poses.keys():
+          print("WARNING: time stamp not found (loc run): ", int(message[1].timestamp))
           continue
-        if not int(message[1].vertex_timestamp / precision) in ground_truth_poses.keys():
-          print("WARNING: time stamp not found 2: ", int(message[1].vertex_timestamp / precision))
+        if not int(message[1].vertex_timestamp) in ground_truth_poses.keys():
+          print("WARNING: time stamp not found (map run): ", int(message[1].vertex_timestamp))
           continue
 
-        robot_timestamp = int(message[1].timestamp / precision)
-        vertex_timestamp = int(message[1].vertex_timestamp / precision)
+        robot_timestamp = int(message[1].timestamp)
+        vertex_timestamp = int(message[1].vertex_timestamp)
 
         T_robot_vertex_vec = np.array(message[1].t_robot_vertex.xi)[..., None]
         T_robot_vertex = se3op.vec2tran(T_robot_vertex_vec)
@@ -186,23 +189,13 @@ def main(data_dir):
         # compute error
         errors[i, :] = se3op.tran2vec(T_robot_vertex @ T_vertex_robot_gt).flatten()
 
-
-
-        # TODO remove the following
-        # T_robot_vertex_vec = np.array(message[1].t_robot_vertex.xi)
-        # # inv(T_enu_robot) @ T_enu_vertex = T_robot_vertex
-        # T_robot_vertex = npla.inv(ground_truth_poses[robot_timestamp]) @ ground_truth_poses[vertex_timestamp]
-        # T_robot_vertex_vec_gt = se3op.tran2vec(T_robot_vertex).flatten()
-        # # compute error
-        # errors[i, :] = T_robot_vertex_vec_gt - T_robot_vertex_vec
-
       print(np.mean(np.abs(errors), axis=0))
 
       #
-      date2trial_map[loc_input].append((trial.replace("boreas.", ""), errors))
+      date2trial_map[loc_input].append((trial.replace("rosbag2_", ""), errors))
       if trial not in trial2date_map.keys():
         trial2date_map[trial] = list()
-      trial2date_map[trial].append((loc_input.replace("boreas-", ""), errors))
+      trial2date_map[trial].append((loc_input.replace("rosbag2_", ""), errors))
 
 
       fig = plt.figure()
