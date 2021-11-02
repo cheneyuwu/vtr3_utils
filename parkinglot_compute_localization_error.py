@@ -48,14 +48,11 @@ class BagFileParser():
     return [(timestamp, deserialize_message(data, self.topic_msg_message[topic_name])) for timestamp, data in rows]
 
 
-def get_lidar_poses(root: str, sequences: List[str]):
+def get_robot_poses(root: str, sequences: List[str]):
 
-  # hardcoded transforms
-  T_robot_gps = np.array([[1, 0, 0, 0.6], [0, 1, 0, 0], [0, 0, 1, 0.52], [0, 0, 0, 1]])
-  T_robot_lidar = np.array([[1, 0, 0, 0.06], [0, 1, 0, 0], [0, 0, 1, 1.45], [0, 0, 0, 1]])
-
-  # T_gps_lidar = npla.inv(T_robot_gps) @ T_robot_lidar
-  T_gps_robot = npla.inv(T_robot_gps)
+  # hardcoded transforms (no need be cause we are already in robot frame)
+  # T_robot_gps = np.array([[1, 0, 0, 0.6], [0, 1, 0, 0], [0, 0, 1, 0.52], [0, 0, 0, 1]])
+  # T_robot_lidar = np.array([[1, 0, 0, 0.06], [0, 1, 0, 0], [0, 0, 1, 1.45], [0, 0, 0, 1]])
 
   time_T_global_robot = dict()
   for seq in sequences:
@@ -65,8 +62,7 @@ def get_lidar_poses(root: str, sequences: List[str]):
 
     time_xi_k0 = np.loadtxt(filename, delimiter=',')
     timestamps = time_xi_k0[:, 0]
-    T_global_gps = se3op.vec2tran(time_xi_k0[:, 1:, None])
-    T_global_robot = T_global_gps @ T_gps_robot
+    T_global_robot = se3op.vec2tran(time_xi_k0[:, 1:, None])
     for i in range(len(timestamps)):
       time_T_global_robot[int(timestamps[i])] = T_global_robot[i]
 
@@ -144,7 +140,7 @@ def main(data_dir):
   dataset_seqs = [odo_input, *loc_inputs]
   print("Dataset Root:", dataset_root)
   print("Dataset Sequences:", dataset_seqs)
-  ground_truth_poses = get_lidar_poses(dataset_root, dataset_seqs)
+  ground_truth_poses = get_robot_poses(dataset_root, dataset_seqs)
 
   print("Loaded number of poses: ", len(ground_truth_poses))
 

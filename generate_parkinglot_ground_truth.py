@@ -3,6 +3,7 @@ import os.path as osp
 import argparse
 from multiprocessing import Pool
 import numpy as np
+import numpy.linalg as npla
 import matplotlib
 import matplotlib.pyplot as plt
 from pyproj import Proj
@@ -16,7 +17,7 @@ from pysteam.trajectory import Time, TrajectoryInterface
 from pysteam.state import TransformStateVar, VectorSpaceStateVar
 from pysteam.problem import OptimizationProblem, StaticNoiseModel, L2LossFunc, WeightedLeastSquareCostTerm
 from pysteam.solver import GaussNewtonSolver, DoglegGaussNewtonSolver
-from pysteam.evaluator import TransformStateEvaluator, PointToPointErrorEval
+from pysteam.evaluator import TransformStateEvaluator, FixedTransformEvaluator, ComposeTransformEvaluator, PointToPointErrorEval
 
 
 class BagFileParser():
@@ -202,12 +203,19 @@ def gps_smoothing(gps_poses) -> TrajectoryInterface:
   for t, T_vi, w_iv_inv in state_vars:
     traj.add_knot(time=Time(nsecs=t), T_k0=TransformStateEvaluator(T_vi), w_0k_ink=w_iv_inv)
 
+  # hard-code gps to robot transform
+  T_robot_gps = np.array([[1, 0, 0, 0.6], [0, 1, 0, 0], [0, 0, 1, 0.52], [0, 0, 0, 1]])
+  T_gps_robot = Transformation(T_ba=npla.inv(T_robot_gps))
+  T_gps_robot_eval = FixedTransformEvaluator(T_gps_robot)
+
   cost_terms = []
   # use a shared L2 loss function and noise model for all cost terms
   loss_func = L2LossFunc()
   for i in range(num_states):
+    # T_rq = T_k0
+    T_rq = ComposeTransformEvaluator(T_gps_robot_eval, TransformStateEvaluator(state_vars[i][1]))
     noise_model = StaticNoiseModel(gps_poses["cov"][i], "covariance")
-    error_func = PointToPointErrorEval(T_rq=TransformStateEvaluator(state_vars[i][1]),
+    error_func = PointToPointErrorEval(T_rq=T_rq,
                                        reference=np.array([[0, 0, 0, 1]]).T,
                                        query=gps_meas[i])
     cost_terms.append(WeightedLeastSquareCostTerm(error_func, noise_model, loss_func))
@@ -245,8 +253,6 @@ def generate_ground_truth_poses(data_dir):
   rosbag_dirs = [name for name in os.listdir(data_dir) if osp.isdir(osp.join(data_dir, name))]
   rosbag_dirs.sort()
   print(rosbag_dirs)
-  # rosbag_dirs = rosbag_dirs[:2] + rosbag_dirs[-1:]
-  # print(rosbag_dirs)
 
   proj_origin = (43.78210381666667, -79.46711405, 149.765)  # hardcoding for now - todo: get from ground truth CSV
   projection = Proj("+proj=etmerc +ellps=WGS84 +lat_0={0} +lon_0={1} +x_0=0 +y_0=0 +z_0={2} +k_0=1".format(
@@ -272,7 +278,7 @@ def generate_ground_truth_poses(data_dir):
 
   #   np.savetxt(osp.join(data_dir, rosbag_dir, "lidar_ground_truth.csv"), time_xi_k0, delimiter=",")
   #   plot_one(gps_poses, rosbag_dir, data_dir)
-  #   plot_one(gps_poses, rosbag_dir, data_dir)
+  #   plot_one_interpolated(gps_poses, rosbag_dir, data_dir)
 
   #   tot_gps_poses.append(gps_poses)
 
@@ -312,7 +318,6 @@ def plot_one(gps_poses, data_dir, rosbag_dir):
   ax.set_title('GPS Good Segments')
   ax.axis('equal')
   fig.savefig(osp.join(data_dir, rosbag_dir, "gps_segments.png"))
-  # plt.close(fig)
 
 
 def plot_one_interpolated(gps_poses, data_dir, rosbag_dir):
@@ -324,7 +329,6 @@ def plot_one_interpolated(gps_poses, data_dir, rosbag_dir):
   ax.set_title('GPS Interpolated at Lidar Timestamps')
   ax.axis('equal')
   fig.savefig(osp.join(data_dir, rosbag_dir, "gps_interpolated.png"))
-  # plt.close(fig)
 
 
 def plot_all(tot_gps_poses, data_dir):
