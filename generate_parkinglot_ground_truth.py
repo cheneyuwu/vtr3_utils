@@ -1,8 +1,7 @@
 import os
 import os.path as osp
 import argparse
-import datetime
-import csv
+from multiprocessing import Pool
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -16,7 +15,7 @@ from pylgmath import so3op, se3op, Transformation
 from pysteam.trajectory import Time, TrajectoryInterface
 from pysteam.state import TransformStateVar, VectorSpaceStateVar
 from pysteam.problem import OptimizationProblem, StaticNoiseModel, L2LossFunc, WeightedLeastSquareCostTerm
-from pysteam.solver import GaussNewtonSolver
+from pysteam.solver import GaussNewtonSolver, DoglegGaussNewtonSolver
 from pysteam.evaluator import TransformStateEvaluator, PointToPointErrorEval
 
 
@@ -65,6 +64,7 @@ class BagFileParser():
       else:
         break
 
+
 def generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord):
 
   try:
@@ -75,11 +75,24 @@ def generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord)
     for _, msg in iter:
       lidar_timestamps.append(int(msg.header.stamp.sec * 1e9) + msg.header.stamp.nanosec)
   except Exception as e:
+    print("Could not open rosbag: {}".format(osp.dirname(bag_file)))
     return None, None
 
-  print("Loaded ros bag: {} with number of lidar messages {}".format(osp.dirname(bag_file), len(lidar_timestamps)))
+  print("Loaded ros bag: {} with number of gps messages {} and number of lidar messages {}".format(
+      osp.dirname(bag_file), len(messages), len(lidar_timestamps)))
 
-  gps_poses = {"timestamp": [], "latitude": [], "longitude": [], "altitude": [], "cov": [], "x": [], "y": [], 'x_seg': [], 'y_seg': [], 'bad_run': True}
+  gps_poses = {
+      "timestamp": [],
+      "latitude": [],
+      "longitude": [],
+      "altitude": [],
+      "cov": [],
+      "x": [],
+      "y": [],
+      'x_seg': [],
+      'y_seg': [],
+      'bad_run': True
+  }
 
   # Collecting segements along a path that have good gps so we can plot a
   # list of good segmants and ignore the bad data.
@@ -92,7 +105,7 @@ def generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord)
 
     # Check if covariance is good. Up to 0.1 is ok, I've chosen slightly
     # stricter setting here.
-    covariance_is_large = gps_msg[1].position_covariance[0] >= 0.05
+    covariance_is_large = gps_msg[1].position_covariance[0] >= 500
     if covariance_is_large:
       num_large_covariance += 1
       prev_vert_bad_gps = True
@@ -113,6 +126,7 @@ def generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord)
       # Want to plot with the start of the path at (0, 0)
       start_gps_coord.extend([gps_msg[1].latitude, gps_msg[1].longitude, gps_msg[1].altitude])
       start_xy_coord.extend([x, y])
+      print("WARNING: new starting position: ", start_gps_coord, start_xy_coord)
 
     gps_poses["timestamp"].append(gps_msg[0])
     gps_poses["latitude"].append(gps_msg[1].latitude - start_gps_coord[0])
@@ -120,18 +134,17 @@ def generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord)
     gps_poses["altitude"].append(gps_msg[1].altitude - start_gps_coord[2])
     gps_poses["x"].append(x - start_xy_coord[0])
     gps_poses["y"].append(y - start_xy_coord[1])
-    gps_poses["cov"].append(gps_msg[1].position_covariance[0])
+    gps_poses["cov"].append(np.array(gps_msg[1].position_covariance).reshape((3, 3)))
 
     gps_poses["x_seg"][segment_ind].append(x - start_xy_coord[0])
     gps_poses["y_seg"][segment_ind].append(y - start_xy_coord[1])
 
-  gps_poses["bad_run"] = False   # bool(num_large_covariance > 0)
+  gps_poses["bad_run"] = False  # bool(num_large_covariance > 0)
 
   gps_poses["rosbag_dir"] = osp.basename(osp.dirname(bag_file))
 
   print("=> Number of segments:", len(gps_poses["x_seg"]))
-  if num_large_covariance > 0:
-    print("=> Large cov {}: {}, total: {}".format(osp.dirname(bag_file), num_large_covariance, len(messages)))
+  print("=> Large cov {}: {}, total: {}".format(osp.dirname(bag_file), num_large_covariance, len(messages)))
 
   if len(gps_poses['timestamp']) == 0:
     return None, None
@@ -192,9 +205,11 @@ def gps_smoothing(gps_poses) -> TrajectoryInterface:
   cost_terms = []
   # use a shared L2 loss function and noise model for all cost terms
   loss_func = L2LossFunc()
-  noise_model = StaticNoiseModel(np.eye(3), "information")
   for i in range(num_states):
-    error_func = PointToPointErrorEval(T_rq=TransformStateEvaluator(state_vars[i][1]), reference=np.array([[0, 0, 0, 1]]).T, query=gps_meas[i])
+    noise_model = StaticNoiseModel(gps_poses["cov"][i], "covariance")
+    error_func = PointToPointErrorEval(T_rq=TransformStateEvaluator(state_vars[i][1]),
+                                       reference=np.array([[0, 0, 0, 1]]).T,
+                                       query=gps_meas[i])
     cost_terms.append(WeightedLeastSquareCostTerm(error_func, noise_model, loss_func))
 
   opt_prob = OptimizationProblem()
@@ -202,44 +217,121 @@ def gps_smoothing(gps_poses) -> TrajectoryInterface:
   opt_prob.add_cost_term(*traj.get_prior_cost_terms())
   opt_prob.add_cost_term(*cost_terms)
 
-  solver = GaussNewtonSolver(opt_prob, verbose=True, max_iterations=1)
+  solver = GaussNewtonSolver(opt_prob, verbose=True, max_iterations=100)
   solver.optimize()
 
   return traj
 
 
-def load_gps_poses(data_dir):
+_func = None
+
+
+def worker_init(func):
+  global _func
+  _func = func
+
+
+def worker(x):
+  return _func(x)
+
+
+def xmap(func, iterable, processes=None):
+  with Pool(processes, initializer=worker_init, initargs=(func,)) as p:
+    return p.map(worker, iterable)
+
+
+def generate_ground_truth_poses(data_dir):
 
   rosbag_dirs = [name for name in os.listdir(data_dir) if osp.isdir(osp.join(data_dir, name))]
   rosbag_dirs.sort()
+  print(rosbag_dirs)
+  # rosbag_dirs = rosbag_dirs[:2] + rosbag_dirs[-1:]
+  # print(rosbag_dirs)
 
-  proj_origin = (43.7822845, -79.4661581, 169.642048)  # hardcoding for now - todo: get from ground truth CSV
+  proj_origin = (43.78210381666667, -79.46711405, 149.765)  # hardcoding for now - todo: get from ground truth CSV
   projection = Proj("+proj=etmerc +ellps=WGS84 +lat_0={0} +lon_0={1} +x_0=0 +y_0=0 +z_0={2} +k_0=1".format(
       proj_origin[0], proj_origin[1], proj_origin[2]))
 
   start_gps_coord = []
   start_xy_coord = []
 
-  tot_gps_poses = []
+  # # TODO hard-coded here for now
+  start_gps_coord = [43.78210381666667, -79.46711405, 149.765]
+  start_xy_coord = [0.0, 0.0]
 
-  for rosbag_dir in rosbag_dirs:
+  # ## single threaded version
+  # tot_gps_poses = []
+
+  # for rosbag_dir in rosbag_dirs:
+  #   bag_file = '{0}/{1}/{1}_0.db3'.format(data_dir, rosbag_dir)
+
+  #   gps_poses, time_xi_k0 = generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord)
+
+  #   if gps_poses is None:
+  #     continue
+
+  #   np.savetxt(osp.join(data_dir, rosbag_dir, "lidar_ground_truth.csv"), time_xi_k0, delimiter=",")
+  #   plot_one(gps_poses, rosbag_dir, data_dir)
+  #   plot_one(gps_poses, rosbag_dir, data_dir)
+
+  #   tot_gps_poses.append(gps_poses)
+
+  ## multi-threaded version
+  def _do_work(rosbag_dir):
     bag_file = '{0}/{1}/{1}_0.db3'.format(data_dir, rosbag_dir)
-
     gps_poses, time_xi_k0 = generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord)
-
     if gps_poses is None:
-      continue
+      return None
 
     np.savetxt(osp.join(data_dir, rosbag_dir, "lidar_ground_truth.csv"), time_xi_k0, delimiter=",")
 
-    tot_gps_poses.append(gps_poses)
+    plot_one(gps_poses, data_dir, rosbag_dir)
+    plot_one_interpolated(gps_poses, data_dir, rosbag_dir)
+
+    return gps_poses
+
+  tot_gps_poses = xmap(_do_work, rosbag_dirs)
+
+  ##
 
   return tot_gps_poses
 
 
-def plot_data(tot_gps_poses, data_dir):
+def plot_one(gps_poses, data_dir, rosbag_dir):
 
-  # plt.figure(figsize=(22, 15))
+  if len(gps_poses["x_seg"]) == 0:
+    return
+
+  fig = plt.figure(figsize=(10, 10))
+  ax = fig.add_subplot(111)
+  for j in range(len(gps_poses["x_seg"])):
+    p = ax.plot(gps_poses["x_seg"][j], gps_poses["y_seg"][j], 'r-')
+
+  ax.set_xlabel('x [m]')
+  ax.set_ylabel('y [m]')
+  ax.set_title('GPS Good Segments')
+  ax.axis('equal')
+  fig.savefig(osp.join(data_dir, rosbag_dir, "gps_segments.png"))
+  # plt.close(fig)
+
+
+def plot_one_interpolated(gps_poses, data_dir, rosbag_dir):
+  fig = plt.figure(figsize=(10, 10))
+  ax = fig.add_subplot(111)
+  ax.plot(gps_poses['x_interp'], gps_poses['y_interp'], 'r-')
+  ax.set_xlabel('x [m]')
+  ax.set_ylabel('y [m]')
+  ax.set_title('GPS Interpolated at Lidar Timestamps')
+  ax.axis('equal')
+  fig.savefig(osp.join(data_dir, rosbag_dir, "gps_interpolated.png"))
+  # plt.close(fig)
+
+
+def plot_all(tot_gps_poses, data_dir):
+
+  fig = plt.figure(figsize=(10, 10))
+  ax = fig.add_subplot(111)
+
   plot_lines = []
   labels = []
 
@@ -247,49 +339,44 @@ def plot_data(tot_gps_poses, data_dir):
 
     p = None
     for j in range(len(tot_gps_poses[i]["x_seg"])):
-      p = plt.plot(tot_gps_poses[i]["x_seg"][j],
-                   tot_gps_poses[i]["y_seg"][j],
-                   linewidth=2,
-                   color='C{}'.format(i))
+      p = ax.plot(tot_gps_poses[i]["x_seg"][j], tot_gps_poses[i]["y_seg"][j], color='C{}'.format(i))
 
     if p is not None:
       plot_lines.append(p[0])
       labels.append(tot_gps_poses[i]["rosbag_dir"])
 
-  plt.ylabel('y (m)', fontsize=20, weight='bold')
-  plt.xlabel('x (m)', fontsize=20, weight='bold')
-  plt.xticks(fontsize=20)
-  plt.yticks(fontsize=20)
-  plt.title('GPS ground truth, teach and repeat runs', fontsize=22, weight='bold')
-  plt.legend(plot_lines, labels, fontsize=12)
+  ax.set_ylabel('y (m)', fontsize=14, weight='bold')
+  ax.set_xlabel('x (m)', fontsize=14, weight='bold')
+  # ax.set_xticks(fontsize=14)
+  # ax.set_yticks(fontsize=14)
+  ax.set_title('GPS ground truth, teach and repeat runs', fontsize=14, weight='bold')
+  ax.legend(plot_lines, labels, fontsize=12)
+  fig.savefig('{}/gps_paths.png'.format(data_dir), bbox_inches='tight', format='png')
   plt.show()
-  plt.savefig('{}/gps_paths.png'.format(data_dir), bbox_inches='tight', format='png')
-  plt.close()
 
-def plot_data_interpolated(tot_gps_poses, data_dir):
 
-  # plt.figure(figsize=(22, 15))
+def plot_all_interpolated(tot_gps_poses, data_dir):
+
+  fig = plt.figure(figsize=(10, 10))
+  ax = fig.add_subplot(111)
+
   plot_lines = []
   labels = []
 
   for i in range(len(tot_gps_poses)):
-    p = plt.plot(tot_gps_poses[i]["x_interp"],
-                  tot_gps_poses[i]["y_interp"],
-                  linewidth=2,
-                  color='C{}'.format(i))
+    p = ax.plot(tot_gps_poses[i]["x_interp"], tot_gps_poses[i]["y_interp"], linewidth=2, color='C{}'.format(i))
 
     plot_lines.append(p[0])
     labels.append(tot_gps_poses[i]["rosbag_dir"])
 
-  plt.ylabel('y (m)', fontsize=20, weight='bold')
-  plt.xlabel('x (m)', fontsize=20, weight='bold')
-  plt.xticks(fontsize=20)
-  plt.yticks(fontsize=20)
-  plt.title('GPS ground truth, teach and repeat runs', fontsize=22, weight='bold')
-  plt.legend(plot_lines, labels, fontsize=12)
+  ax.set_ylabel('y (m)', fontsize=14, weight='bold')
+  ax.set_xlabel('x (m)', fontsize=14, weight='bold')
+  # ax.set_xticks(fontsize=14)
+  # ax.set_yticks(fontsize=14)
+  ax.set_title('GPS ground truth, teach and repeat runs', fontsize=14, weight='bold')
+  ax.legend(plot_lines, labels, fontsize=12)
+  fig.savefig('{}/gps_paths_interpolated.png'.format(data_dir), bbox_inches='tight', format='png')
   plt.show()
-  plt.savefig('{}/gps_paths_interpolated.png'.format(data_dir), bbox_inches='tight', format='png')
-  plt.close()
 
 
 if __name__ == "__main__":
@@ -303,7 +390,7 @@ if __name__ == "__main__":
 
   args = parser.parse_args()
 
-  tot_gps_poses = load_gps_poses(args.path)
+  tot_gps_poses = generate_ground_truth_poses(args.path)
 
-  plot_data(tot_gps_poses, args.path)
-  plot_data_interpolated(tot_gps_poses, args.path)
+  plot_all(tot_gps_poses, args.path)
+  plot_all_interpolated(tot_gps_poses, args.path)

@@ -12,7 +12,6 @@ import sqlite3
 from rosidl_runtime_py.utilities import get_message
 from rclpy.serialization import deserialize_message
 
-
 from pyboreas import BoreasDataset
 from pylgmath import se3op
 
@@ -52,18 +51,13 @@ class BagFileParser():
 def get_lidar_poses(root: str, sequences: List[str]):
 
   # hardcoded transforms
-  T_robot_gps = np.array([[1, 0, 0, 0.6],
-                          [0, 1, 0, 0],
-                          [0, 0, 1, 0.52],
-                          [0, 0, 0, 1]])
-  T_robot_lidar = np.array([[1, 0, 0, 0.06],
-                            [0, 1, 0, 0],
-                            [0, 0, 1, 1.45],
-                            [0, 0, 0, 1]])
+  T_robot_gps = np.array([[1, 0, 0, 0.6], [0, 1, 0, 0], [0, 0, 1, 0.52], [0, 0, 0, 1]])
+  T_robot_lidar = np.array([[1, 0, 0, 0.06], [0, 1, 0, 0], [0, 0, 1, 1.45], [0, 0, 0, 1]])
 
-  T_gps_lidar = npla.inv(T_robot_gps) @ T_robot_lidar
+  # T_gps_lidar = npla.inv(T_robot_gps) @ T_robot_lidar
+  T_gps_robot = npla.inv(T_robot_gps)
 
-  time_T_global_lidar = dict()
+  time_T_global_robot = dict()
   for seq in sequences:
     filename = osp.join(root, seq, "lidar_ground_truth.csv")
     if not osp.exists(filename):
@@ -72,11 +66,11 @@ def get_lidar_poses(root: str, sequences: List[str]):
     time_xi_k0 = np.loadtxt(filename, delimiter=',')
     timestamps = time_xi_k0[:, 0]
     T_global_gps = se3op.vec2tran(time_xi_k0[:, 1:, None])
-    T_global_lidar = T_global_gps @ T_gps_lidar
+    T_global_robot = T_global_gps @ T_gps_robot
     for i in range(len(timestamps)):
-      time_T_global_lidar[int(timestamps[i])] = T_global_lidar[i]
+      time_T_global_robot[int(timestamps[i])] = T_global_robot[i]
 
-  return time_T_global_lidar
+  return time_T_global_robot
 
 
 def plot_error(fig, errors):
@@ -109,7 +103,11 @@ def plot_error(fig, errors):
     ax.set_ylabel(r"$|\hat{\theta}_x - \theta_x|$ [$rad$]".replace("x", labels[i]))
     ax.set_ylim([0, 0.1])
 
-def plot_error_box(fig, errors: List[Tuple[str, np.ndarray]], proc_func = lambda x: x, ylabel=r"$\hat{tran}_dir - tran_dir$ [$unit$]"):
+
+def plot_error_box(fig,
+                   errors: List[Tuple[str, np.ndarray]],
+                   proc_func=lambda x: x,
+                   ylabel=r"$\hat{tran}_dir - tran_dir$ [$unit$]"):
   plot_number = 611
   fig.set_size_inches(2 + 1.4 * len(errors), 12)
   fig.subplots_adjust(left=0.16, right=0.95, bottom=0.1, top=0.93, wspace=0.7, hspace=0.7)
@@ -130,6 +128,7 @@ def plot_error_box(fig, errors: List[Tuple[str, np.ndarray]], proc_func = lambda
     ax.set_ylabel(ylabel.replace(r"tran", r"\theta").replace(r"unit", r"rad").replace(r"dir", labels[i]))
     # ax.set_ylim([-0.1, 0.1])
 
+
 def main(data_dir):
   data_dir = osp.normpath(data_dir)
   root_dir = osp.dirname(data_dir)
@@ -141,7 +140,7 @@ def main(data_dir):
   print("Localization:", loc_inputs)
 
   # dataset directory and necessary sequences to load
-  dataset_root = osp.join(os.getenv('VTRDATA'), 'utias_2021_parkinglot_rosbag')
+  dataset_root = osp.join(os.getenv('VTRDATA'), 'utias_20211101_parkinglot_shorter_sequence')
   dataset_seqs = [odo_input, *loc_inputs]
   print("Dataset Root:", dataset_root)
   print("Dataset Sequences:", dataset_seqs)
@@ -197,12 +196,11 @@ def main(data_dir):
         trial2date_map[trial] = list()
       trial2date_map[trial].append((loc_input.replace("rosbag2_", ""), errors))
 
-
       fig = plt.figure()
       plot_error(fig, errors)
       fig.suptitle(odo_input + " <- " + loc_input + " : " + trial, fontsize=16)
       os.makedirs(osp.join(odo_input, loc_input), exist_ok=True)
-      fig.savefig(osp.join(odo_input, loc_input, trial+'.png'))
+      fig.savefig(osp.join(odo_input, loc_input, trial + '.png'))
 
   # plot box plot based on the two maps
   os.makedirs(odo_input, exist_ok=True)
@@ -212,29 +210,26 @@ def main(data_dir):
     fig = plt.figure()
     plot_error_box(fig, v)
     fig.suptitle(odo_input + " <- " + k, fontsize=16)
-    fig.savefig(osp.join(odo_input, k+'_box.png'))
+    fig.savefig(osp.join(odo_input, k + '_box.png'))
     # np.abs(error)
     fig = plt.figure()
     plot_error_box(fig, v, np.abs, r"$|\hat{tran}_dir - tran_dir|$ [$unit$]")
     fig.suptitle(odo_input + " <- " + k, fontsize=16)
-    fig.savefig(osp.join(odo_input, k+'_abs_box.png'))
+    fig.savefig(osp.join(odo_input, k + '_abs_box.png'))
 
   for k, v in trial2date_map.items():
     # error
     fig = plt.figure()
     plot_error_box(fig, v)
     fig.suptitle(odo_input + " point map version:" + k.replace("boreas.", ""), fontsize=16)
-    fig.savefig(osp.join(odo_input, k+'_box.png'))
+    fig.savefig(osp.join(odo_input, k + '_box.png'))
     # np.abs(err)
     fig = plt.figure()
     plot_error_box(fig, v, np.abs, r"$|\hat{tran}_dir - tran_dir|$ [$unit$]")
     fig.suptitle(odo_input + " point map version:" + k.replace("boreas.", ""), fontsize=16)
-    fig.savefig(osp.join(odo_input, k+'_abs_box.png'))
-
+    fig.savefig(osp.join(odo_input, k + '_abs_box.png'))
 
   # plt.show()
-
-
 
 
 if __name__ == "__main__":

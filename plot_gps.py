@@ -1,8 +1,6 @@
 import os
 import os.path as osp
 import argparse
-import datetime
-import csv
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -45,28 +43,55 @@ class BagFileParser():
 
   # Return messages as list of tuples [(timestamp0, message0), (timestamp1, message1), ...]
   def get_bag_messages(self, topic_name):
-
     topic_id = self.topic_id[topic_name]
-
-    # Get from the db
     rows = self.cursor.execute("SELECT timestamp, data FROM messages WHERE topic_id = {}".format(topic_id)).fetchall()
-
-    # Deserialise all and timestamp them
     return [(timestamp, deserialize_message(data, self.topic_msg_message[topic_name])) for timestamp, data in rows]
 
+  def get_bag_timestamps(self, topic_name):
+    topic_id = self.topic_id[topic_name]
+    rows = self.cursor.execute("SELECT timestamp FROM messages WHERE topic_id = {}".format(topic_id)).fetchall()
+    return [x for x, in rows]
 
-def load_gps(bag_file, projection, start_gps_coord, start_xy_coord):
+  def get_bag_msgs_iter(self, topic_name):
 
-  gps_poses = {"timestamp": [], "latitude": [], "longitude": [], "altitude": [], "cov": [], "x": [], "y": [], 'x_seg': [], 'y_seg': [], 'bad_run': True}
+    topic_id = self.topic_id[topic_name]
+    result = self.cursor.execute("SELECT timestamp, data FROM messages WHERE topic_id = {}".format(topic_id))
+    while True:
+      res = result.fetchone()
+      if res is not None:
+        yield [res[0], deserialize_message(res[1], self.topic_msg_message[topic_name])]
+      else:
+        break
+
+
+def generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord):
 
   try:
     parser = BagFileParser(bag_file)
     messages = parser.get_bag_messages("/fix")
+    lidar_timestamps = []
+    iter = parser.get_bag_msgs_iter("/points")
+    for _, msg in iter:
+      lidar_timestamps.append(int(msg.header.stamp.sec * 1e9) + msg.header.stamp.nanosec)
   except Exception as e:
     print("Could not open rosbag: {}".format(osp.dirname(bag_file)))
-    return gps_poses
+    return None
 
-  print("Loaded ros bag: {}".format(osp.dirname(bag_file)))
+  print("Loaded ros bag: {} with number of gps messages {} and number of lidar messages {}".format(
+      osp.dirname(bag_file), len(messages), len(lidar_timestamps)))
+
+  gps_poses = {
+      "timestamp": [],
+      "latitude": [],
+      "longitude": [],
+      "altitude": [],
+      "cov": [],
+      "x": [],
+      "y": [],
+      'x_seg': [],
+      'y_seg': [],
+      'bad_run': True
+  }
 
   # Collecting segements along a path that have good gps so we can plot a
   # list of good segmants and ignore the bad data.
@@ -79,7 +104,7 @@ def load_gps(bag_file, projection, start_gps_coord, start_xy_coord):
 
     # Check if covariance is good. Up to 0.1 is ok, I've chosen slightly
     # stricter setting here.
-    covariance_is_large = gps_msg[1].position_covariance[0] >= 0.05
+    covariance_is_large = gps_msg[1].position_covariance[0] >= 500
     if covariance_is_large:
       num_large_covariance += 1
       prev_vert_bad_gps = True
@@ -100,6 +125,7 @@ def load_gps(bag_file, projection, start_gps_coord, start_xy_coord):
       # Want to plot with the start of the path at (0, 0)
       start_gps_coord.extend([gps_msg[1].latitude, gps_msg[1].longitude, gps_msg[1].altitude])
       start_xy_coord.extend([x, y])
+      print("WARNING: new starting position: ", start_gps_coord, start_xy_coord)
 
     gps_poses["timestamp"].append(gps_msg[0])
     gps_poses["latitude"].append(gps_msg[1].latitude - start_gps_coord[0])
@@ -107,26 +133,40 @@ def load_gps(bag_file, projection, start_gps_coord, start_xy_coord):
     gps_poses["altitude"].append(gps_msg[1].altitude - start_gps_coord[2])
     gps_poses["x"].append(x - start_xy_coord[0])
     gps_poses["y"].append(y - start_xy_coord[1])
-    gps_poses["cov"].append(gps_msg[1].position_covariance[0])
+    gps_poses["cov"].append(np.array(gps_msg[1].position_covariance).reshape((3, 3)))
 
     gps_poses["x_seg"][segment_ind].append(x - start_xy_coord[0])
     gps_poses["y_seg"][segment_ind].append(y - start_xy_coord[1])
 
-  gps_poses["bad_run"] = False   # bool(num_large_covariance > 0)
+  gps_poses["bad_run"] = False  # bool(num_large_covariance > 0)
 
   gps_poses["rosbag_dir"] = osp.basename(osp.dirname(bag_file))
 
   print("=> Number of segments:", len(gps_poses["x_seg"]))
-  if num_large_covariance > 0:
-    print("=> Large cov {}: {}, total: {}".format(osp.dirname(bag_file), num_large_covariance, len(messages)))
+  print("=> Large cov {}: {}, total: {}".format(osp.dirname(bag_file), num_large_covariance, len(messages)))
+
+  if len(gps_poses['timestamp']) == 0:
+    return None
+
+  trajectory = gps_smoothing(gps_poses)
+
+  # get interpolated poses
+  gps_poses['x_interp'] = []
+  gps_poses['y_interp'] = []
+  for i, time in enumerate(lidar_timestamps):
+    traj_time = Time(nsecs=time)
+    T_k0 = trajectory.get_interp_pose_eval(traj_time).evaluate()
+    r_k0_in0 = T_k0.r_ba_ina()
+    gps_poses['x_interp'].append(r_k0_in0[0, 0])
+    gps_poses['y_interp'].append(r_k0_in0[1, 0])
 
   return gps_poses
 
 
 def gps_smoothing(gps_poses) -> TrajectoryInterface:
-  num_states = len(gps_poses['x'])
+  num_states = len(gps_poses['timestamp'])
   if num_states == 0:
-    return
+    return None
 
   print("=> Generating steam trajectory, given measurement size:", num_states)
 
@@ -158,9 +198,11 @@ def gps_smoothing(gps_poses) -> TrajectoryInterface:
   cost_terms = []
   # use a shared L2 loss function and noise model for all cost terms
   loss_func = L2LossFunc()
-  noise_model = StaticNoiseModel(np.eye(3), "information")
   for i in range(num_states):
-    error_func = PointToPointErrorEval(T_rq=TransformStateEvaluator(state_vars[i][1]), reference=np.array([[0, 0, 0, 1]]).T, query=gps_meas[i])
+    noise_model = StaticNoiseModel(gps_poses["cov"][i], "covariance")
+    error_func = PointToPointErrorEval(T_rq=TransformStateEvaluator(state_vars[i][1]),
+                                       reference=np.array([[0, 0, 0, 1]]).T,
+                                       query=gps_meas[i])
     cost_terms.append(WeightedLeastSquareCostTerm(error_func, noise_model, loss_func))
 
   opt_prob = OptimizationProblem()
@@ -174,10 +216,11 @@ def gps_smoothing(gps_poses) -> TrajectoryInterface:
   return traj
 
 
-def load_gps_poses(data_dir):
+def generate_ground_truth_poses(data_dir):
 
   rosbag_dirs = [name for name in os.listdir(data_dir) if osp.isdir(osp.join(data_dir, name))]
   rosbag_dirs.sort()
+  print(rosbag_dirs)
 
   proj_origin = (43.7822845, -79.4661581, 169.642048)  # hardcoding for now - todo: get from ground truth CSV
   projection = Proj("+proj=etmerc +ellps=WGS84 +lat_0={0} +lon_0={1} +x_0=0 +y_0=0 +z_0={2} +k_0=1".format(
@@ -185,37 +228,27 @@ def load_gps_poses(data_dir):
 
   start_gps_coord = []
   start_xy_coord = []
+  # TODO hard-coded here for now
+  start_gps_coord = [43.78212220166667, -79.46618494166667, 154.00400000000002]
+  start_xy_coord = [-2.1607305275367565, -18.032641313693496]
 
+  ## single threaded version
   tot_gps_poses = []
 
   for rosbag_dir in rosbag_dirs:
     bag_file = '{0}/{1}/{1}_0.db3'.format(data_dir, rosbag_dir)
 
-    gps_poses = load_gps(bag_file, projection, start_gps_coord, start_xy_coord)
+    gps_poses = generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord)
 
-    # create a trajectory to interpolate poses
-    trajectory = gps_smoothing(gps_poses)
-
-    if len(gps_poses['x']) == 0:
+    if gps_poses is None:
       continue
-
-    # get interpolated poses
-    start_time = gps_poses['timestamp'][0] / 1e9
-    end_time = gps_poses['timestamp'][-1] / 1e9
-    gps_poses['x_interp'] = []
-    gps_poses['y_interp'] = []
-    for time in np.arange(start_time, end_time, 0.2):
-      traj_time = Time(secs=time)
-      r_k0_in0 = trajectory.get_interp_pose_eval(traj_time).evaluate().r_ba_ina()
-      gps_poses['x_interp'].append(r_k0_in0[0, 0])
-      gps_poses['y_interp'].append(r_k0_in0[1, 0])
 
     tot_gps_poses.append(gps_poses)
 
   return tot_gps_poses
 
 
-def plot_data(tot_gps_poses, data_dir):
+def plot_all(tot_gps_poses, data_dir):
 
   # plt.figure(figsize=(22, 15))
   plot_lines = []
@@ -225,48 +258,43 @@ def plot_data(tot_gps_poses, data_dir):
 
     p = None
     for j in range(len(tot_gps_poses[i]["x_seg"])):
-      p = plt.plot(tot_gps_poses[i]["x_seg"][j],
-                   tot_gps_poses[i]["y_seg"][j],
-                   linewidth=2,
-                   color='C{}'.format(i))
+      p = plt.plot(tot_gps_poses[i]["x_seg"][j], tot_gps_poses[i]["y_seg"][j], linewidth=2, color='C{}'.format(i))
 
     if p is not None:
       plot_lines.append(p[0])
       labels.append(tot_gps_poses[i]["rosbag_dir"])
 
-  plt.ylabel('y (m)', fontsize=20, weight='bold')
-  plt.xlabel('x (m)', fontsize=20, weight='bold')
-  plt.xticks(fontsize=20)
-  plt.yticks(fontsize=20)
-  plt.title('GPS ground truth, teach and repeat runs', fontsize=22, weight='bold')
+  plt.ylabel('y (m)', fontsize=14, weight='bold')
+  plt.xlabel('x (m)', fontsize=14, weight='bold')
+  plt.xticks(fontsize=14)
+  plt.yticks(fontsize=14)
+  plt.title('GPS ground truth, teach and repeat runs', fontsize=14, weight='bold')
   plt.legend(plot_lines, labels, fontsize=12)
-  plt.show()
   plt.savefig('{}/gps_paths.png'.format(data_dir), bbox_inches='tight', format='png')
+  plt.show()
   plt.close()
 
-def plot_data_interpolated(tot_gps_poses, data_dir):
+
+def plot_all_interpolated(tot_gps_poses, data_dir):
 
   # plt.figure(figsize=(22, 15))
   plot_lines = []
   labels = []
 
   for i in range(len(tot_gps_poses)):
-    p = plt.plot(tot_gps_poses[i]["x_interp"],
-                  tot_gps_poses[i]["y_interp"],
-                  linewidth=2,
-                  color='C{}'.format(i))
+    p = plt.plot(tot_gps_poses[i]["x_interp"], tot_gps_poses[i]["y_interp"], linewidth=2, color='C{}'.format(i))
 
     plot_lines.append(p[0])
     labels.append(tot_gps_poses[i]["rosbag_dir"])
 
-  plt.ylabel('y (m)', fontsize=20, weight='bold')
-  plt.xlabel('x (m)', fontsize=20, weight='bold')
-  plt.xticks(fontsize=20)
-  plt.yticks(fontsize=20)
-  plt.title('GPS ground truth, teach and repeat runs', fontsize=22, weight='bold')
+  plt.ylabel('y (m)', fontsize=14, weight='bold')
+  plt.xlabel('x (m)', fontsize=14, weight='bold')
+  plt.xticks(fontsize=14)
+  plt.yticks(fontsize=14)
+  plt.title('GPS ground truth, teach and repeat runs', fontsize=14, weight='bold')
   plt.legend(plot_lines, labels, fontsize=12)
-  plt.show()
   plt.savefig('{}/gps_paths_interpolated.png'.format(data_dir), bbox_inches='tight', format='png')
+  plt.show()
   plt.close()
 
 
@@ -281,7 +309,7 @@ if __name__ == "__main__":
 
   args = parser.parse_args()
 
-  tot_gps_poses = load_gps_poses(args.path)
+  tot_gps_poses = generate_ground_truth_poses(args.path)
 
-  plot_data(tot_gps_poses, args.path)
-  plot_data_interpolated(tot_gps_poses, args.path)
+  plot_all(tot_gps_poses, args.path)
+  plot_all_interpolated(tot_gps_poses, args.path)
