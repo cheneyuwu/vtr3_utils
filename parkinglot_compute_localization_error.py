@@ -3,6 +3,7 @@ import os.path as osp
 import argparse
 from typing import List, Tuple
 import numpy as np
+np.set_printoptions(linewidth=120,suppress=True)
 import numpy.linalg as npla
 import matplotlib
 import matplotlib.pyplot as plt
@@ -15,7 +16,7 @@ from rclpy.serialization import deserialize_message
 from pyboreas import BoreasDataset
 from pylgmath import se3op
 
-matplotlib.use("Agg")  # matplotlib.use("TkAgg")
+matplotlib.use("TkAgg")  # matplotlib.use("TkAgg")
 
 
 class BagFileParser():
@@ -166,6 +167,9 @@ def main(data_dir):
       messages = parser.get_bag_messages("localization_result")
 
       errors = np.empty((len(messages), 6))
+      T_global_vertex = np.empty((len(messages), 4, 4))
+      T_global_robot_list = np.empty((len(messages), 4, 4))
+      T_global_robot_gt_list = np.empty((len(messages), 4, 4))
       for i, message in enumerate(messages):
         if not int(message[1].timestamp) in ground_truth_poses.keys():
           print("WARNING: time stamp not found (loc run): ", int(message[1].timestamp))
@@ -179,10 +183,20 @@ def main(data_dir):
 
         T_robot_vertex_vec = np.array(message[1].t_robot_vertex.xi)[..., None]
         T_robot_vertex = se3op.vec2tran(T_robot_vertex_vec)
-        # inv(T_enu_robot) @ T_enu_vertex = T_robot_vertex
+
+        T_vertex_robot = npla.inv(T_robot_vertex)
+        # print("estimated:", se3op.tran2vec(T_vertex_robot).flatten())
+
+        # inv(T_enu_vertex) @ T_enu_robot = T_vertex_robot
         T_vertex_robot_gt = npla.inv(ground_truth_poses[vertex_timestamp]) @ ground_truth_poses[robot_timestamp]
+        # print("ground truth:", se3op.tran2vec(T_vertex_robot_gt).flatten())
+
         # compute error
         errors[i, :] = se3op.tran2vec(T_robot_vertex @ T_vertex_robot_gt).flatten()
+
+        T_global_vertex[i, :, :] = ground_truth_poses[vertex_timestamp]
+        T_global_robot_list[i, :, :] = ground_truth_poses[vertex_timestamp] @ T_vertex_robot
+        T_global_robot_gt_list[i, :, :] = ground_truth_poses[vertex_timestamp] @ T_vertex_robot_gt
 
       print(np.mean(np.abs(errors), axis=0))
 
@@ -197,6 +211,13 @@ def main(data_dir):
       fig.suptitle(odo_input + " <- " + loc_input + " : " + trial, fontsize=16)
       os.makedirs(osp.join(odo_input, loc_input), exist_ok=True)
       fig.savefig(osp.join(odo_input, loc_input, trial + '.png'))
+
+      fig = plt.figure()
+      ax = fig.add_subplot(111)
+      ax.plot(T_global_vertex[:, 0, 3], T_global_vertex[:, 1, 3], 'r.', label='global_vertex')
+      ax.plot(T_global_robot_list[:, 0, 3], T_global_robot_list[:, 1, 3], 'b.', label='global_robot')
+      ax.plot(T_global_robot_gt_list[:, 0, 3], T_global_robot_gt_list[:, 1, 3], 'g.', label='global_robot_gt')
+      plt.show()
 
   # plot box plot based on the two maps
   os.makedirs(odo_input, exist_ok=True)

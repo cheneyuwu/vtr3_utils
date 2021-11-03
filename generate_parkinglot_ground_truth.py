@@ -3,6 +3,7 @@ import os.path as osp
 import argparse
 from multiprocessing import Pool
 import numpy as np
+np.set_printoptions(linewidth=120,suppress=False)
 import numpy.linalg as npla
 import matplotlib
 import matplotlib.pyplot as plt
@@ -106,7 +107,7 @@ def generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord)
 
     # Check if covariance is good. Up to 0.1 is ok, I've chosen slightly
     # stricter setting here.
-    covariance_is_large = gps_msg[1].position_covariance[0] >= 500
+    covariance_is_large = gps_msg[1].position_covariance[0] > 0.1
     if covariance_is_large:
       num_large_covariance += 1
       prev_vert_bad_gps = True
@@ -135,10 +136,13 @@ def generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord)
     gps_poses["altitude"].append(gps_msg[1].altitude - start_gps_coord[2])
     gps_poses["x"].append(x - start_xy_coord[0])
     gps_poses["y"].append(y - start_xy_coord[1])
-    gps_poses["cov"].append(np.array(gps_msg[1].position_covariance).reshape((3, 3)))
+    gps_poses["cov"].append(gps_msg[1].position_covariance)
 
     gps_poses["x_seg"][segment_ind].append(x - start_xy_coord[0])
     gps_poses["y_seg"][segment_ind].append(y - start_xy_coord[1])
+
+    # print("GPS meas:", gps_poses["timestamp"][-1], gps_poses["longitude"][-1], gps_poses["latitude"][-1], gps_poses["altitude"][-1], gps_poses["x"][-1], gps_poses["y"][-1])
+    # print("GPS meas:", gps_poses["timestamp"][-1], gps_poses["x"][-1], gps_poses["y"][-1])
 
   gps_poses["bad_run"] = False  # bool(num_large_covariance > 0)
 
@@ -157,16 +161,18 @@ def generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord)
   # get interpolated poses
   gps_poses['x_interp'] = []
   gps_poses['y_interp'] = []
+  gps_poses['T_0k'] = []
   for i, time in enumerate(lidar_timestamps):
     traj_time = Time(nsecs=time)
-    T_k0 = trajectory.get_interp_pose_eval(traj_time).evaluate()
-    r_k0_in0 = T_k0.r_ba_ina()
+    T_0k = trajectory.get_interp_pose_eval(traj_time).evaluate().inverse()
+    r_k0_in0 = T_0k.r_ab_inb()
     gps_poses['x_interp'].append(r_k0_in0[0, 0])
     gps_poses['y_interp'].append(r_k0_in0[1, 0])
+    gps_poses['T_0k'].append(T_0k)
 
     # get vec xi_k0 is from T_0k -> T_global_gps
     time_xi_k0[i, 0] = time
-    time_xi_k0[i, 1:] = T_k0.inverse().vec().flatten()
+    time_xi_k0[i, 1:] = T_0k.vec().flatten()
 
   return gps_poses, time_xi_k0
 
@@ -176,7 +182,7 @@ def gps_smoothing(gps_poses) -> TrajectoryInterface:
   if num_states == 0:
     return None
 
-  print("=> Generating steam trajectory, given measurement size:", num_states)
+  print("=> Generating steam trajectory, given measurement size :", num_states)
 
   # convert to gps measurements
   gps_meas = np.empty((num_states, 4, 1))
@@ -187,6 +193,20 @@ def gps_smoothing(gps_poses) -> TrajectoryInterface:
 
   states = []
   for i in range(num_states):
+    # # states with initial conditions and associated timestamps
+    # # T_ba = T_k0 where 0 can be some global frame (e.g. UTM) and k is the vehicle/robot frame at time k
+    # if i < num_states - 1:
+    #   C_0k_xaxis = (gps_meas[i+1, :3] - gps_meas[i, :3]).flatten()
+    #   theta_z = np.arctan2(C_0k_xaxis[1], C_0k_xaxis[0])
+    #   C_0k = np.array([[np.cos(theta_z), -np.sin(theta_z), 0],
+    #                    [np.sin(theta_z), np.cos(theta_z), 0],
+    #                    [0, 0, 1]])
+    # else:
+    #   C_0k = np.eye(3)
+    # T_k0 = Transformation(C_ba=C_0k.T, r_ba_in_a=gps_meas[i, :3])
+
+    # states.append([gps_poses['timestamp'][i], T_k0, np.zeros((6, 1))])
+
     # states with initial conditions and associated timestamps
     # T_ba = T_k0 where 0 can be some global frame (e.g. UTM) and k is the vehicle/robot frame at time k
     states.append([
@@ -214,7 +234,13 @@ def gps_smoothing(gps_poses) -> TrajectoryInterface:
   for i in range(num_states):
     # T_rq = T_k0
     T_rq = ComposeTransformEvaluator(T_gps_robot_eval, TransformStateEvaluator(state_vars[i][1]))
-    noise_model = StaticNoiseModel(gps_poses["cov"][i], "covariance")
+
+    # covariance
+    cov = np.eye(3)
+    cov[0, 0] = gps_poses["cov"][i][0]
+    cov[1, 1] = gps_poses["cov"][i][4]
+    cov[2, 2] = 0.0001
+    noise_model = StaticNoiseModel(cov, "covariance")
     error_func = PointToPointErrorEval(T_rq=T_rq,
                                        reference=np.array([[0, 0, 0, 1]]).T,
                                        query=gps_meas[i])
@@ -225,7 +251,7 @@ def gps_smoothing(gps_poses) -> TrajectoryInterface:
   opt_prob.add_cost_term(*traj.get_prior_cost_terms())
   opt_prob.add_cost_term(*cost_terms)
 
-  solver = GaussNewtonSolver(opt_prob, verbose=True, max_iterations=100)
+  solver = DoglegGaussNewtonSolver(opt_prob, verbose=True, max_iterations=100)
   solver.optimize()
 
   return traj
@@ -265,38 +291,38 @@ def generate_ground_truth_poses(data_dir):
   start_gps_coord = [43.78210381666667, -79.46711405, 149.765]
   start_xy_coord = [0.0, 0.0]
 
-  # ## single threaded version
-  # tot_gps_poses = []
+  ## single threaded version
+  tot_gps_poses = []
 
-  # for rosbag_dir in rosbag_dirs:
-  #   bag_file = '{0}/{1}/{1}_0.db3'.format(data_dir, rosbag_dir)
-
-  #   gps_poses, time_xi_k0 = generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord)
-
-  #   if gps_poses is None:
-  #     continue
-
-  #   np.savetxt(osp.join(data_dir, rosbag_dir, "lidar_ground_truth.csv"), time_xi_k0, delimiter=",")
-  #   plot_one(gps_poses, rosbag_dir, data_dir)
-  #   plot_one_interpolated(gps_poses, rosbag_dir, data_dir)
-
-  #   tot_gps_poses.append(gps_poses)
-
-  ## multi-threaded version
-  def _do_work(rosbag_dir):
+  for rosbag_dir in rosbag_dirs:
     bag_file = '{0}/{1}/{1}_0.db3'.format(data_dir, rosbag_dir)
+
     gps_poses, time_xi_k0 = generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord)
+
     if gps_poses is None:
-      return None
+      continue
 
     np.savetxt(osp.join(data_dir, rosbag_dir, "lidar_ground_truth.csv"), time_xi_k0, delimiter=",")
+    plot_one(gps_poses, rosbag_dir, data_dir)
+    plot_one_interpolated(gps_poses, rosbag_dir, data_dir)
 
-    plot_one(gps_poses, data_dir, rosbag_dir)
-    plot_one_interpolated(gps_poses, data_dir, rosbag_dir)
+    tot_gps_poses.append(gps_poses)
 
-    return gps_poses
+  # ## multi-threaded version
+  # def _do_work(rosbag_dir):
+  #   bag_file = '{0}/{1}/{1}_0.db3'.format(data_dir, rosbag_dir)
+  #   gps_poses, time_xi_k0 = generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord)
+  #   if gps_poses is None:
+  #     return None
 
-  tot_gps_poses = xmap(_do_work, rosbag_dirs)
+  #   np.savetxt(osp.join(data_dir, rosbag_dir, "lidar_ground_truth.csv"), time_xi_k0, delimiter=",")
+
+  #   plot_one(gps_poses, data_dir, rosbag_dir)
+  #   plot_one_interpolated(gps_poses, data_dir, rosbag_dir)
+
+  #   return gps_poses
+
+  # tot_gps_poses = xmap(_do_work, rosbag_dirs, 1)
 
   ##
 
@@ -329,6 +355,7 @@ def plot_one_interpolated(gps_poses, data_dir, rosbag_dir):
   ax.set_title('GPS Interpolated at Lidar Timestamps')
   ax.axis('equal')
   fig.savefig(osp.join(data_dir, rosbag_dir, "gps_interpolated.png"))
+  plt.show()
 
 
 def plot_all(tot_gps_poses, data_dir):
