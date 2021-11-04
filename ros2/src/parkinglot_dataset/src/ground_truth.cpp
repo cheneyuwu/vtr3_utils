@@ -30,6 +30,74 @@ using namespace vtr;
 using namespace vtr::common;
 using namespace vtr::logging;
 
+
+class VelocityConstraintEval : public steam::ErrorEvaluator<6, 6>::type {
+public:
+  using Ptr = std::shared_ptr<VelocityConstraintEval>;
+  using ConstPtr = std::shared_ptr<const VelocityConstraintEval>;
+
+  VelocityConstraintEval(const steam::VectorSpaceStateVar::ConstPtr &stateVec,
+                         const Eigen::Array<double, 6, 1> &coeff)
+      : stateVec_(stateVec), coeff_(coeff) {
+    if (stateVec_->getPerturbDim() != 6) {
+      throw std::invalid_argument("Dimension was improper size");
+    }
+  }
+
+  virtual bool isActive() const { return !stateVec_->isLocked(); }
+
+  virtual Eigen::Matrix<double, 6, 1> evaluate() const {
+
+    // Get value of state variable
+    auto x = stateVec_->getValue().array();
+
+    auto err = x * x * coeff_;
+
+    return err.matrix();
+  }
+
+  virtual Eigen::Matrix<double, 6, 1>
+  evaluate(const Eigen::Matrix<double, 6, 6> &lhs,
+           std::vector<steam::Jacobian<6, 6>> *jacs) const {
+
+    // Get value of state variable
+    auto x = stateVec_->getValue().array();
+
+    // Check for null ptr and clear jacobians
+    if (jacs == NULL) {
+      throw std::invalid_argument(
+          "Null pointer provided to return-input 'jacs' in evaluate");
+    }
+    jacs->clear();
+
+    // If state not locked, add Jacobian
+    if (!stateVec_->isLocked()) {
+
+      // Create Jacobian object
+      jacs->push_back(steam::Jacobian<6, 6>());
+      steam::Jacobian<6, 6> &jacref = jacs->back();
+      jacref.key = stateVec_->getKey();
+
+      auto diag = 2 * x * coeff_;
+
+      // Fill out matrix
+      Eigen::Matrix<double, 6, 6> jacobian =
+          Eigen::Matrix<double, 6, 6>::Zero();
+      jacobian.diagonal() = diag;
+      jacref.jac = lhs * jacobian;
+    }
+
+    // Construct error and return
+    auto err = x * x * coeff_;
+    return err.matrix();
+  }
+
+private:
+  steam::VectorSpaceStateVar::ConstPtr stateVec_;
+
+  Eigen::Array<double, 6, 1> coeff_;
+};
+
 struct GPSPose {
   int64_t timestamp;
   double latitude;
@@ -225,7 +293,7 @@ int main(int argc, char **argv) {
   Eigen::Matrix<double,6,6> Qc_inv; Qc_inv.setZero(); Qc_inv.diagonal() = 1.0 / Qc_diag;
 
   // create trajectory
-  steam::se3::SteamTrajInterface traj(Qc_inv);
+  steam::se3::SteamTrajInterface traj(Qc_inv, true);
   for (size_t i = 0; i < states.size(); i++) {
     const auto& state = states.at(i);
     auto temp = steam::se3::TransformStateEvaluator::MakeShared(state.pose);
@@ -263,6 +331,7 @@ int main(int argc, char **argv) {
   // shared loss functions
   auto loss_func = std::make_shared<steam::L2LossFunc>();
 
+  // add gps measurement cost terms
   for (size_t i = 0; i < states.size(); i++) {
     const auto& state = states.at(i);
 
@@ -273,13 +342,28 @@ int main(int argc, char **argv) {
     cov << gps_poses[i].cov[0], 0,                   0,
            0,                   gps_poses[i].cov[4], 0,
            0,                   0,                   0.0001;
-    auto noise_model = std::make_shared<steam::StaticNoiseModel<3>>(cov);
+    auto noise_model = std::make_shared<steam::StaticNoiseModel<3>>(cov, steam::COVARIANCE);
 
     // Construct error function
     auto error_func = std::make_shared<steam::PointToPointErrorEval2>(T_rq, Eigen::Vector3d::Zero(), gps_meas_mat.block<3, 1>(0, i));
 
     // Create cost term and add to problem
     auto cost =  std::make_shared<steam::WeightedLeastSqCostTerm<3, 6>>(error_func, noise_model, loss_func);
+
+    cost_terms->add(cost);
+  }
+
+  // add side-slip constraint
+  Eigen::Matrix<double, 6, 1> coeff;
+  coeff << 0, 10, 10, 10, 10, 0;
+  auto vel_noise_model = std::make_shared<steam::StaticNoiseModel<6>>(Eigen::Matrix<double, 6, 6>::Identity());
+  for (size_t i = 0; i < states.size(); i++) {
+    const auto& state = states.at(i);
+    auto & velocity = state.velocity;
+
+    auto error_func = std::make_shared<VelocityConstraintEval>(velocity, coeff);
+
+    auto cost = std::make_shared<steam::WeightedLeastSqCostTerm<6, 6>>(error_func, vel_noise_model, loss_func);
 
     cost_terms->add(cost);
   }
@@ -299,7 +383,7 @@ int main(int argc, char **argv) {
   solver.optimize();
 
   {
-    // publish initial path
+    // publish final path
     auto final_path_pub = node->create_publisher<nav_msgs::msg::Path>("final_path", 1);
     nav_msgs::msg::Path final_path;
     final_path.header.frame_id = "world";
@@ -312,6 +396,41 @@ int main(int argc, char **argv) {
     }
     final_path_pub->publish(final_path);
   }
+
+  // interpolate
+  std::vector<lgmath::se3::Transformation> T_0_robot_vec;
+  for (const auto& timestamp: timestamp_vec)
+    T_0_robot_vec.push_back(traj.getInterpPoseEval(steam::Time(timestamp))->evaluate().inverse());
+
+  {
+    // publish interpolated path
+    auto inpert_path_pub = node->create_publisher<nav_msgs::msg::Path>("interp_path", 1);
+    nav_msgs::msg::Path inpert_path;
+    inpert_path.header.frame_id = "world";
+    // path.header.stamp = 0;
+    auto &poses = inpert_path.poses;
+    for (const auto& T_0_robot: T_0_robot_vec) {
+      geometry_msgs::msg::PoseStamped pose;
+      pose.pose = tf2::toMsg(Eigen::Affine3d(T_0_robot.matrix()));
+      poses.push_back(pose);
+    }
+    inpert_path_pub->publish(inpert_path);
+  }
+
+  std::ofstream outstream;
+  outstream.open(dataset_dir / "robot_poses.txt");  // T_0_robot
+  outstream << std::setprecision(6) << std::scientific;
+  for (size_t i = 0; i < timestamp_vec.size(); i++) {
+    outstream << timestamp_vec[i] << " ";
+    const auto& tmp = T_0_robot_vec[i].matrix();
+    for (int i = 0; i < 4; i++)
+      for (int j = 0; j < 4; j++) {
+        outstream << tmp(i, j);
+        if (i != 3 || j != 3) outstream << " ";
+      }
+    outstream << "\n";
+  }
+  outstream.close();
 
   // cleanup
   proj_destroy(pj_utm);

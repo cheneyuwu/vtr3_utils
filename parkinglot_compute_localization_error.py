@@ -57,13 +57,13 @@ def get_robot_poses(root: str, sequences: List[str]):
 
   time_T_global_robot = dict()
   for seq in sequences:
-    filename = osp.join(root, seq, "lidar_ground_truth.csv")
+    filename = osp.join(root, seq, "robot_poses.txt")
     if not osp.exists(filename):
       continue
 
-    time_xi_k0 = np.loadtxt(filename, delimiter=',')
+    time_xi_k0 = np.loadtxt(filename, delimiter=' ')
     timestamps = time_xi_k0[:, 0]
-    T_global_robot = se3op.vec2tran(time_xi_k0[:, 1:, None])
+    T_global_robot = time_xi_k0[:, 1:].reshape((-1, 4, 4))
     for i in range(len(timestamps)):
       time_T_global_robot[int(timestamps[i])] = T_global_robot[i]
 
@@ -74,12 +74,12 @@ def plot_error(fig, errors):
   # switch to absolute error
   errors = np.abs(errors)
 
-  plot_number = 611
-  fig.set_size_inches(8, 12)
+  plot_number = 311
+  fig.set_size_inches(10, 10)
   fig.subplots_adjust(left=0.16, right=0.95, bottom=0.1, top=0.93, wspace=0.7, hspace=0.7)
 
   labels = ['x', 'y', 'z', 'x', 'y', 'z']
-  for i in range(3):
+  for i in range(2):
     ax = fig.add_subplot(plot_number + i)
     # plot the errors
     ax.plot(errors[:, i], '-b', linewidth=1.0)
@@ -88,9 +88,9 @@ def plot_error(fig, errors):
     ax.set_title("mean: " + str(np.mean(errors[:, i])) + ", var: " + str(np.var(errors[:, i])))
     ax.set_xlabel(r"frame")
     ax.set_ylabel(r"$|\hat{r}_x - r_x|$ [$m$]".replace("x", labels[i]))
-    ax.set_ylim([0, 1])
-  for i in range(3, 6):
-    ax = fig.add_subplot(plot_number + i)
+    ax.set_ylim([0, 0.2])
+  for i in range(5, 6):
+    ax = fig.add_subplot(plot_number + i - 3)
     # plot the errors
     ax.plot(errors[:, i], '-b', linewidth=1.0)
     # plot the mean
@@ -105,20 +105,20 @@ def plot_error_box(fig,
                    errors: List[Tuple[str, np.ndarray]],
                    proc_func=lambda x: x,
                    ylabel=r"$\hat{tran}_dir - tran_dir$ [$unit$]"):
-  plot_number = 611
-  fig.set_size_inches(2 + 1.4 * len(errors), 12)
+  plot_number = 311
+  fig.set_size_inches(5 + 1.4 * len(errors), 12)
   fig.subplots_adjust(left=0.16, right=0.95, bottom=0.1, top=0.93, wspace=0.7, hspace=0.7)
 
   labels = ['x', 'y', 'z', 'x', 'y', 'z']
-  for i in range(3):
+  for i in range(2):
     ax = fig.add_subplot(plot_number + i)
     # plot the errors
     ax.boxplot([proc_func(error[:, i]) for _, error in errors])
     ax.set_xticklabels([x for x, _ in errors], rotation=-25)
     ax.set_ylabel(ylabel.replace(r"tran", r"r").replace(r"unit", r"m").replace(r"dir", labels[i]))
     # ax.set_ylim([-1, 1])
-  for i in range(3, 6):
-    ax = fig.add_subplot(plot_number + i)
+  for i in range(5, 6):
+    ax = fig.add_subplot(plot_number + i - 3)
     # plot the errors
     ax.boxplot([proc_func(error[:, i]) for _, error in errors])
     ax.set_xticklabels([x for x, _ in errors], rotation=-25)
@@ -214,10 +214,16 @@ def main(data_dir):
 
       fig = plt.figure()
       ax = fig.add_subplot(111)
-      ax.plot(T_global_vertex[:, 0, 3], T_global_vertex[:, 1, 3], 'r.', label='global_vertex')
-      ax.plot(T_global_robot_list[:, 0, 3], T_global_robot_list[:, 1, 3], 'b.', label='global_robot')
-      ax.plot(T_global_robot_gt_list[:, 0, 3], T_global_robot_gt_list[:, 1, 3], 'g.', label='global_robot_gt')
-      plt.show()
+      ax.plot(T_global_vertex[:, 0, 3], T_global_vertex[:, 1, 3], 'r.', label='vertex ground truth')
+      ax.plot(T_global_robot_list[:, 0, 3], T_global_robot_list[:, 1, 3], 'b.', label='robot estimated')
+      ax.plot(T_global_robot_gt_list[:, 0, 3], T_global_robot_gt_list[:, 1, 3], 'g.', label='robot ground truth')
+      ax.legend()
+      ax.set_xlabel(r"x [m]")
+      ax.set_ylabel(r"y [m]")
+      fig.suptitle(odo_input + " <- " + loc_input + " : " + trial, fontsize=12)
+      os.makedirs(osp.join(odo_input, loc_input), exist_ok=True)
+      fig.savefig(osp.join(odo_input, loc_input, trial + '_path.png'))
+      # plt.show()
 
   # plot box plot based on the two maps
   os.makedirs(odo_input, exist_ok=True)

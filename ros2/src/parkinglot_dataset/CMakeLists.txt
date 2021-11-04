@@ -44,9 +44,20 @@ ament_target_dependencies(${PROJECT_NAME}_ground_truth
   vtr_common vtr_logging
 )
 
+add_executable(${PROJECT_NAME}_velocity_cost src/velocity_cost.cpp)
+ament_target_dependencies(${PROJECT_NAME}_velocity_cost
+  PROJ
+  rclcpp rosbag2 rosbag2_cpp
+  tf2 tf2_ros tf2_eigen
+  sensor_msgs nav_msgs
+  steam
+  vtr_common vtr_logging
+)
+
 install(
   TARGETS
     ${PROJECT_NAME}_ground_truth
+    ${PROJECT_NAME}_velocity_cost
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
