@@ -2,6 +2,7 @@ import os
 import os.path as osp
 import argparse
 import numpy as np
+np.set_printoptions(linewidth=120,suppress=False)
 import numpy.linalg as npla
 import matplotlib
 import matplotlib.pyplot as plt
@@ -105,7 +106,7 @@ def generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord)
 
     # Check if covariance is good. Up to 0.1 is ok, I've chosen slightly
     # stricter setting here.
-    covariance_is_large = gps_msg[1].position_covariance[0] >= 500
+    covariance_is_large = gps_msg[1].position_covariance[0] > 0.1
     if covariance_is_large:
       num_large_covariance += 1
       prev_vert_bad_gps = True
@@ -134,7 +135,7 @@ def generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord)
     gps_poses["altitude"].append(gps_msg[1].altitude - start_gps_coord[2])
     gps_poses["x"].append(x - start_xy_coord[0])
     gps_poses["y"].append(y - start_xy_coord[1])
-    gps_poses["cov"].append(np.array(gps_msg[1].position_covariance).reshape((3, 3)))
+    gps_poses["cov"].append(gps_msg[1].position_covariance)
 
     gps_poses["x_seg"][segment_ind].append(x - start_xy_coord[0])
     gps_poses["y_seg"][segment_ind].append(y - start_xy_coord[1])
@@ -149,80 +150,7 @@ def generate_ground_truth(bag_file, projection, start_gps_coord, start_xy_coord)
   if len(gps_poses['timestamp']) == 0:
     return None
 
-  trajectory = gps_smoothing(gps_poses)
-
-  # get interpolated poses
-  gps_poses['x_interp'] = []
-  gps_poses['y_interp'] = []
-  for i, time in enumerate(lidar_timestamps):
-    traj_time = Time(nsecs=time)
-    T_k0 = trajectory.get_interp_pose_eval(traj_time).evaluate()
-    r_k0_in0 = T_k0.r_ba_ina()
-    gps_poses['x_interp'].append(r_k0_in0[0, 0])
-    gps_poses['y_interp'].append(r_k0_in0[1, 0])
-
   return gps_poses
-
-
-def gps_smoothing(gps_poses) -> TrajectoryInterface:
-  num_states = len(gps_poses['timestamp'])
-  if num_states == 0:
-    return None
-
-  print("=> Generating steam trajectory, given measurement size:", num_states)
-
-  # convert to gps measurements
-  gps_meas = np.empty((num_states, 4, 1))
-  gps_meas[:, 0, 0] = gps_poses['x']
-  gps_meas[:, 1, 0] = gps_poses['y']
-  gps_meas[:, 2, 0] = 0.0  # note: planar assumption!
-  gps_meas[:, 3, 0] = 1.0  # homogeneous coordinates
-
-  states = []
-  for i in range(num_states):
-    # states with initial conditions and associated timestamps
-    # T_ba = T_k0 where 0 can be some global frame (e.g. UTM) and k is the vehicle/robot frame at time k
-    states.append([
-        gps_poses['timestamp'][i],
-        Transformation(C_ba=np.eye(3), r_ba_in_a=gps_meas[i, :3]),
-        np.zeros((6, 1)),
-    ])
-
-  # wrap states with corresponding steam state variables (no copying!)
-  state_vars = [(t, TransformStateVar(T_vi), VectorSpaceStateVar(w_iv_inv)) for t, T_vi, w_iv_inv in states]
-
-  Qc_inv = np.diag(1 / np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]))  # smoothing factor diagonal
-  traj = TrajectoryInterface(Qc_inv=Qc_inv)
-  for t, T_vi, w_iv_inv in state_vars:
-    traj.add_knot(time=Time(nsecs=t), T_k0=TransformStateEvaluator(T_vi), w_0k_ink=w_iv_inv)
-
-  # hard-code gps to robot transform
-  T_robot_gps = np.array([[1, 0, 0, 0.6], [0, 1, 0, 0], [0, 0, 1, 0.52], [0, 0, 0, 1]])
-  T_gps_robot = Transformation(T_ba=npla.inv(T_robot_gps))
-  T_gps_robot_eval = FixedTransformEvaluator(T_gps_robot)
-
-  cost_terms = []
-  # use a shared L2 loss function and noise model for all cost terms
-  loss_func = L2LossFunc()
-  for i in range(num_states):
-    # T_rq = T_k0
-    T_rq = ComposeTransformEvaluator(T_gps_robot_eval, TransformStateEvaluator(state_vars[i][1]))
-    noise_model = StaticNoiseModel(gps_poses["cov"][i], "covariance")
-    error_func = PointToPointErrorEval(T_rq=T_rq,
-                                       reference=np.array([[0, 0, 0, 1]]).T,
-                                       query=gps_meas[i])
-    cost_terms.append(WeightedLeastSquareCostTerm(error_func, noise_model, loss_func))
-
-  opt_prob = OptimizationProblem()
-  opt_prob.add_state_var(*[v for state_var in state_vars for v in state_var[1:]])
-  opt_prob.add_cost_term(*traj.get_prior_cost_terms())
-  opt_prob.add_cost_term(*cost_terms)
-
-  solver = GaussNewtonSolver(opt_prob, verbose=True)
-  solver.optimize()
-
-  return traj
-
 
 def generate_ground_truth_poses(data_dir):
 
@@ -259,7 +187,7 @@ def generate_ground_truth_poses(data_dir):
 
 def plot_all(tot_gps_poses, data_dir):
 
-  fig = plt.figure(figsize=(10, 10))
+  fig = plt.figure(figsize=(5, 10))
   ax = fig.add_subplot(111)
 
   plot_lines = []
@@ -277,35 +205,12 @@ def plot_all(tot_gps_poses, data_dir):
 
   ax.set_ylabel('y (m)', fontsize=14, weight='bold')
   ax.set_xlabel('x (m)', fontsize=14, weight='bold')
+  ax.set_aspect('equal')
   # ax.set_xticks(fontsize=14)
   # ax.set_yticks(fontsize=14)
-  ax.set_title('GPS ground truth, teach and repeat runs', fontsize=14, weight='bold')
-  ax.legend(plot_lines, labels, fontsize=12)
+  ax.set_title('GPS ground truth, teach and repeat runs', fontsize=12, weight='bold')
+  ax.legend(plot_lines, labels, fontsize=8, loc='lower left')
   fig.savefig('{}/gps_paths.png'.format(data_dir), bbox_inches='tight', format='png')
-  plt.show()
-
-
-def plot_all_interpolated(tot_gps_poses, data_dir):
-
-  fig = plt.figure(figsize=(10, 10))
-  ax = fig.add_subplot(111)
-
-  plot_lines = []
-  labels = []
-
-  for i in range(len(tot_gps_poses)):
-    p = ax.plot(tot_gps_poses[i]["x_interp"], tot_gps_poses[i]["y_interp"], linewidth=2, color='C{}'.format(i))
-
-    plot_lines.append(p[0])
-    labels.append(tot_gps_poses[i]["rosbag_dir"])
-
-  ax.set_ylabel('y (m)', fontsize=14, weight='bold')
-  ax.set_xlabel('x (m)', fontsize=14, weight='bold')
-  # ax.set_xticks(fontsize=14)
-  # ax.set_yticks(fontsize=14)
-  ax.set_title('GPS ground truth, teach and repeat runs', fontsize=14, weight='bold')
-  ax.legend(plot_lines, labels, fontsize=12)
-  fig.savefig('{}/gps_paths_interpolated.png'.format(data_dir), bbox_inches='tight', format='png')
   plt.show()
 
 
@@ -323,4 +228,3 @@ if __name__ == "__main__":
   tot_gps_poses = generate_ground_truth_poses(args.path)
 
   plot_all(tot_gps_poses, args.path)
-  plot_all_interpolated(tot_gps_poses, args.path)
