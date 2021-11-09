@@ -116,7 +116,7 @@ def plot_error_box(fig,
     ax.boxplot([proc_func(error[:, i]) for _, error in errors])
     ax.set_xticklabels([x for x, _ in errors], rotation=-25)
     ax.set_ylabel(ylabel.replace(r"tran", r"r").replace(r"unit", r"m").replace(r"dir", labels[i]))
-    # ax.set_ylim([-1, 1])
+    # ax.set_ylim([0.0, 0.25])
   for i in range(5, 6):
     ax = fig.add_subplot(plot_number + i - 3)
     # plot the errors

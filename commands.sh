@@ -18,6 +18,9 @@ SEQUENCES=(
   rosbag2_2021_11_06-19_57_56
   # rosbag2_2021_11_06-20_01_44
   rosbag2_2021_11_06-20_05_35
+  # rosbag2_2021_11_09-09_33_49  # bad gps
+  rosbag2_2021_11_09-09_39_16
+  rosbag2_2021_11_09-09_43_03
 )
 # # short staight line from parking lot to pickup and receiving
 # SEQUENCES=(
