@@ -126,7 +126,7 @@ def plot_error_box(fig,
     # ax.set_ylim([-0.1, 0.1])
 
 
-def main(data_dir):
+def main(dataset_dir, data_dir):
   data_dir = osp.normpath(data_dir)
   root_dir = osp.dirname(data_dir)
   odo_input = osp.basename(data_dir)
@@ -137,7 +137,7 @@ def main(data_dir):
   print("Localization:", loc_inputs)
 
   # dataset directory and necessary sequences to load
-  dataset_root = osp.join(os.getenv('VTRDATA'), 'utias_20211101_parkinglot_shorter_sequence')
+  dataset_root = osp.abspath(osp.expanduser(osp.expandvars(dataset_dir)))
   dataset_seqs = [odo_input, *loc_inputs]
   print("Dataset Root:", dataset_root)
   print("Dataset Sequences:", dataset_seqs)
@@ -224,7 +224,7 @@ def main(data_dir):
       fig.suptitle(odo_input + " <- \n" + loc_input + " : " + trial, fontsize=12)
       os.makedirs(osp.join(odo_input, loc_input), exist_ok=True)
       fig.savefig(osp.join(odo_input, loc_input, trial + '_path.png'))
-      plt.show()
+      # plt.show()
 
   # plot box plot based on the two maps
   os.makedirs(odo_input, exist_ok=True)
@@ -263,8 +263,9 @@ if __name__ == "__main__":
   # Assuming following path structure:
   # <rosbag name>/metadata.yaml
   # <rosbag name>/<rosbag name>_0.db3
+  parser.add_argument('--dataset', default=os.getcwd(), type=str, help='path to dataset (default: os.getcwd())')
   parser.add_argument('--path', default=os.getcwd(), type=str, help='path to vtr folder (default: os.getcwd())')
 
   args = parser.parse_args()
 
-  main(args.path)
+  main(args.dataset, args.path)
