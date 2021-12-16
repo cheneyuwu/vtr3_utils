@@ -117,7 +117,7 @@ int main(int argc, char **argv) {
   auto tactic = std::make_shared<TacticV2>(
       TacticV2::Config::fromROS(node), pipeline, pipeline->createOutputCache(),
       graph, callback);
-  tactic->setPipeline(PipelineMode::Branching);
+  tactic->setPipeline(PipelineMode::TeachBranch);
   tactic->addRun();
 
   // Frame and transforms
