@@ -14,7 +14,7 @@ find_package(rosbag2_cpp REQUIRED)
 
 find_package(vtr_common REQUIRED)
 find_package(vtr_logging REQUIRED)
-find_package(vtr_navigation_v2 REQUIRED)
+find_package(vtr_navigation REQUIRED)
 
 ## C++ Libraries
 
@@ -28,7 +28,7 @@ include_directories(
 add_executable(${PROJECT_NAME}_graph_map_server_node src/graph_map_server_node.cpp)
 ament_target_dependencies(${PROJECT_NAME}_graph_map_server_node
   rclcpp
-  vtr_logging vtr_navigation_v2
+  vtr_logging vtr_navigation
 )
 
 install(

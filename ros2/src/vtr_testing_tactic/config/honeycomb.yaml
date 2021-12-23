@@ -8,9 +8,12 @@
         ## ADD LOGGER IDS HERE
         # tactic
         "tactic",
-        "tactic.module",
+        # "tactic.module",
         # "tactic.module.live_mem_manager",
         # "tactic.module.graph_mem_manager",
+        # mission planner
+        # "mission.server",
+        # "mission.state_machine",
         # pose graph
         # "pose_graph",
         # pipeline specific
@@ -27,7 +30,8 @@
         # "lidar.intra_exp_merging",
         # "lidar.dynamic_detection",
         # "lidar.inter_exp_merging",
-        "lidar.change_detection",
+        # "lidar.change_detection",
+        # "lidar.ground_extraction",
       ]
 
     ############ tactic configuration ############
@@ -83,8 +87,8 @@
           # localization thread modules
           "recall",
           "icp",
+          # "change_detection",
           "memory",
-          "change_detection",
         ]
 
     preprocessing:
@@ -204,6 +208,7 @@
 
       memory:
         type: "live_mem_manager"
+
         window_size: 5
 
     localization:
@@ -235,6 +240,7 @@
 
       memory:
         type: "graph_mem_manager"
+
         vertex_life_span: 5
         window_size: 3
 
@@ -245,7 +251,27 @@
         size_x: 40.0
         size_y: 20.0
 
-        delay: 200
+        run_async: true
+        visualize: true
+
+      ground_extraction:
+        type: "lidar.ground_extraction"
+
+        z_offset: 0.2
+
+        alpha: 0.035 # 2.0 * M_PI / 180.0
+        tolerance: 0.25
+        Tm: 0.3
+        Tm_small: 0.1
+        Tb: 0.5
+        Trmse: 0.1
+        Tdprev: 1.0
+
+        rmin: 2.0
+        num_bins_small: 30
+        bin_size_small: 0.5
+        num_bins_large: 10
+        bin_size_large: 1.0
 
         run_async: true
         visualize: true

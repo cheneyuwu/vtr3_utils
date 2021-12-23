@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
   // Pose graph
   auto graph = tactic::Graph::MakeShared((data_dir / "graph").string(), true);
 
-  auto module_factory = std::make_shared<ROSModuleFactoryV2>(node);
+  auto module_factory = std::make_shared<ROSModuleFactory>(node);
 
   auto module = module_factory->get("localization.change_detection");
 

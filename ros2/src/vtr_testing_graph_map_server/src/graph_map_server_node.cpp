@@ -1,7 +1,7 @@
 #include "rclcpp/rclcpp.hpp"
 
 #include "vtr_logging/logging_init.hpp"
-#include "vtr_navigation_v2/graph_map_server.hpp"
+#include "vtr_navigation/graph_map_server.hpp"
 
 using namespace vtr;
 using namespace vtr::logging;

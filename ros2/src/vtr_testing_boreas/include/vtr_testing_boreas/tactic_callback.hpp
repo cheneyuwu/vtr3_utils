@@ -7,7 +7,7 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
 
-#include "vtr_tactic/tactic_v2.hpp"
+#include "vtr_tactic/tactic.hpp"
 
 namespace vtr {
 namespace tactic {
@@ -33,7 +33,7 @@ class TacticCallback : public TacticCallbackInterface {
   }
 
   /// for visualization in ROS
-  void publishOdometryRviz(const TacticV2& tactic,
+  void publishOdometryRviz(const Tactic& tactic,
                            const QueryCache& qdata) override {
     auto lock = tactic.chain_->guard();
 
@@ -65,7 +65,7 @@ class TacticCallback : public TacticCallbackInterface {
     }
   }
 
-  void publishPathRviz(const TacticV2& tactic) override {
+  void publishPathRviz(const Tactic& tactic) override {
     std::vector<Eigen::Affine3d> eigen_poses;
     /// publish the repeat path in
     for (unsigned i = 0; i < tactic.chain_->size(); i++) {
@@ -84,7 +84,7 @@ class TacticCallback : public TacticCallbackInterface {
     loc_path_pub_->publish(path);
   }
 
-  void publishLocalizationRviz(const TacticV2& tactic,
+  void publishLocalizationRviz(const Tactic& tactic,
                                const QueryCache& qdata) override {
     auto lock = tactic.chain_->guard();
 

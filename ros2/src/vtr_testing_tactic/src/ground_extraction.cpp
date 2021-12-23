@@ -6,13 +6,12 @@
 
 #include "vtr_common/timing/time_utils.hpp"
 #include "vtr_common/utils/filesystem.hpp"
+#include "vtr_lidar/pipeline.hpp"
 #include "vtr_logging/logging_init.hpp"
-#include "vtr_navigation/navigator.hpp"
 
 using namespace vtr;
 using namespace vtr::common;
 using namespace vtr::logging;
-using namespace vtr::navigation;
 using namespace vtr::tactic;
 
 int main(int argc, char **argv) {
@@ -40,18 +39,12 @@ int main(int argc, char **argv) {
   // Pose graph
   auto graph = tactic::Graph::MakeShared((data_dir / "graph").string(), true);
 
+  // module
   auto module_factory = std::make_shared<ROSModuleFactory>(node);
-  module_factory->add<lidar::IntraExpMergingModule>();
+  auto module = module_factory->get("localization.ground_extraction");
 
-  auto mdl = std::dynamic_pointer_cast<lidar::IntraExpMergingModule>(
-      module_factory->make("odometry.intra_exp_merging"));
-
-  mdl->oldMapPublisher() =
-      node->create_publisher<lidar::IntraExpMergingModule::PointCloudMsg>(
-          "intra_exp_merging_old", 5);
-  mdl->newMapPublisher() =
-      node->create_publisher<lidar::IntraExpMergingModule::PointCloudMsg>(
-          "intra_exp_merging_new", 5);
+  // Parameters
+  const unsigned run_id = node->declare_parameter<int>("run_id", 0);
 
   size_t depth = 5;
   std::queue<tactic::VertexId> ids;
@@ -60,11 +53,15 @@ int main(int argc, char **argv) {
   auto evaluator = std::make_shared<tactic::TemporalEvaluator<tactic::Graph>>();
   evaluator->setGraph(graph.get());
 
-  auto subgraph = graph->getSubgraph(tactic::VertexId(0, 0), evaluator);
-  for (auto it = subgraph->begin(tactic::VertexId(0, 0)); it != subgraph->end();
-       ++it) {
-    lidar::IntraExpMergingModule::Task(mdl, mdl->config(), it->v()->id())
-        .run(nullptr, graph);
+  auto subgraph = graph->getSubgraph(tactic::VertexId(run_id, 0), evaluator);
+  for (auto it = subgraph->begin(tactic::VertexId(run_id, 0));
+       it != subgraph->end(); ++it) {
+    lidar::LidarQueryCache qdata;
+    lidar::LidarOutputCache output;
+    qdata.node = node;
+    qdata.ground_extraction_async.emplace(it->v()->id());
+    module->runAsync(qdata, output, graph, nullptr, {}, {});
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     // memory management
     ids.push(it->v()->id());
     if (ids.size() > depth) {

@@ -1,8 +1,8 @@
 ## Define the following environment variables VTH=VTR Testing Honeycomb
-export VTHROOT=${VTRSRC}/extra/src/vtr_testing_tactic
+export VTHROOT=${VTRSRC}_utils/ros2/src/vtr_testing_tactic
 export VTHCONFIG=${VTHROOT}/config
 export VTHDATA=${VTRDATA}
-export VTHRESULT=${VTRTEMP}/testing/lidar/tactic.exp2
+export VTHRESULT=${VTRTEMP}/testing/lidar
 export DATASET=${VTHDATA}/utias_20211101_parkinglot_shorter_sequence
 mkdir -p ${VTHRESULT}
 

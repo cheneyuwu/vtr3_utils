@@ -39,9 +39,9 @@ int main(int argc, char **argv) {
   // Pose graph
   auto graph = tactic::Graph::MakeShared((data_dir / "graph").string(), true);
 
-  auto module_factory = std::make_shared<ROSModuleFactoryV2>(node);
-
-  auto mdl = module_factory->get("odometry.intra_exp_merging");
+  // module
+  auto module_factory = std::make_shared<ROSModuleFactory>(node);
+  auto module = module_factory->get("odometry.intra_exp_merging");
 
   // Parameters
   const unsigned run_id = node->declare_parameter<int>("run_id", 0);
@@ -60,8 +60,7 @@ int main(int argc, char **argv) {
     lidar::LidarOutputCache output;
     qdata.node = node;
     qdata.intra_exp_merging_async.emplace(it->v()->id());
-    mdl->runAsync(qdata, output, graph, nullptr, tactic::Task::Priority{},
-                  tactic::Task::DepId{});
+    module->runAsync(qdata, output, graph, nullptr, {}, {});
 
     // memory management
     ids.push(it->v()->id());

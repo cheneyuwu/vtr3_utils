@@ -16,7 +16,7 @@ find_package(vtr_common REQUIRED)
 find_package(vtr_logging REQUIRED)
 find_package(vtr_lidar REQUIRED)
 
-find_package(vtr_navigation_v2 REQUIRED)
+find_package(vtr_navigation REQUIRED)
 
 ## C++ Libraries
 
@@ -28,34 +28,22 @@ include_directories(
 )
 
 add_executable(${PROJECT_NAME}_odometry_direct src/odometry_direct.cpp)
-ament_target_dependencies(${PROJECT_NAME}_odometry_direct
-  rclcpp rosbag2 rosbag2_cpp
-  vtr_lidar
-)
+ament_target_dependencies(${PROJECT_NAME}_odometry_direct rclcpp rosbag2 rosbag2_cpp vtr_lidar)
 
-add_executable(${PROJECT_NAME}_localization_direct src/localization_direct.cpp)
-ament_target_dependencies(${PROJECT_NAME}_localization_direct
-  rclcpp rosbag2 rosbag2_cpp
-  vtr_lidar
-)
+# add_executable(${PROJECT_NAME}_localization_direct src/localization_direct.cpp)
+# ament_target_dependencies(${PROJECT_NAME}_localization_direct rclcpp rosbag2 rosbag2_cpp vtr_lidar)
 
 add_executable(${PROJECT_NAME}_intra_exp_merging src/intra_exp_merging.cpp)
-ament_target_dependencies(${PROJECT_NAME}_intra_exp_merging
-  rclcpp rosbag2 rosbag2_cpp
-  vtr_lidar
-)
+ament_target_dependencies(${PROJECT_NAME}_intra_exp_merging rclcpp rosbag2 rosbag2_cpp vtr_lidar)
 
-add_executable(${PROJECT_NAME}_change_detection src/change_detection.cpp)
-ament_target_dependencies(${PROJECT_NAME}_change_detection
-  rclcpp rosbag2 rosbag2_cpp
-  vtr_lidar
-)
+add_executable(${PROJECT_NAME}_ground_extraction src/ground_extraction.cpp)
+ament_target_dependencies(${PROJECT_NAME}_ground_extraction rclcpp rosbag2 rosbag2_cpp vtr_lidar)
 
-add_executable(${PROJECT_NAME}_odometry_direct2 src/odometry_direct2.cpp)
-ament_target_dependencies(${PROJECT_NAME}_odometry_direct2
-  rclcpp rosbag2 rosbag2_cpp
-  vtr_lidar vtr_navigation_v2
-)
+# add_executable(${PROJECT_NAME}_change_detection src/change_detection.cpp)
+# ament_target_dependencies(${PROJECT_NAME}_change_detection rclcpp rosbag2 rosbag2_cpp vtr_lidar)
+
+# add_executable(${PROJECT_NAME}_odometry_direct2 src/odometry_direct2.cpp)
+# ament_target_dependencies(${PROJECT_NAME}_odometry_direct2 rclcpp rosbag2 rosbag2_cpp vtr_lidar vtr_navigation)
 
 install(
   DIRECTORY include/
@@ -65,10 +53,11 @@ install(
 install(
   TARGETS
     ${PROJECT_NAME}_odometry_direct
-    ${PROJECT_NAME}_localization_direct
+    # ${PROJECT_NAME}_localization_direct
     ${PROJECT_NAME}_intra_exp_merging
-    ${PROJECT_NAME}_change_detection
-    ${PROJECT_NAME}_odometry_direct2
+    # ${PROJECT_NAME}_change_detection
+    # ${PROJECT_NAME}_odometry_direct2
+    ${PROJECT_NAME}_ground_extraction
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}

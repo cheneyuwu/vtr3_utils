@@ -1,22 +1,23 @@
 #pragma once
 
+#include <nav_msgs/msg/odometry.hpp>
+#include <nav_msgs/msg/path.hpp>
 #include <tf2/convert.h>
 #include <tf2_eigen/tf2_eigen.h>
 #include <tf2_ros/static_transform_broadcaster.h>
 #include <tf2_ros/transform_broadcaster.h>
-#include <nav_msgs/msg/odometry.hpp>
-#include <nav_msgs/msg/path.hpp>
 
-#include "vtr_tactic/tactic_v2.hpp"
+#include "vtr_tactic/tactic.hpp"
 
 namespace vtr {
 namespace tactic {
 
-using ROSPathMsg = nav_msgs::msg::Path;
-
 class TacticCallback : public TacticCallbackInterface {
- public:
-  TacticCallback(const rclcpp::Node::SharedPtr& node) {
+
+public:
+  using ROSPathMsg = nav_msgs::msg::Path;
+
+  TacticCallback(const rclcpp::Node::SharedPtr &node) {
     tf_bc_ = std::make_shared<tf2_ros::TransformBroadcaster>(node);
     odo_path_pub_ = node->create_publisher<ROSPathMsg>("odo_path", 10);
     loc_path_pub_ = node->create_publisher<ROSPathMsg>("loc_path", 10);
@@ -33,8 +34,8 @@ class TacticCallback : public TacticCallbackInterface {
   }
 
   /// for visualization in ROS
-  void publishOdometryRviz(const TacticV2& tactic,
-                           const QueryCache& qdata) override {
+  void publishOdometryRviz(const Tactic &tactic,
+                           const QueryCache &qdata) override {
     auto lock = tactic.chain_->guard();
 
     /// Publish the latest keyframe estimate in world frame
@@ -65,7 +66,7 @@ class TacticCallback : public TacticCallbackInterface {
     }
   }
 
-  void publishPathRviz(const TacticV2& tactic) override {
+  void publishPathRviz(const Tactic &tactic) override {
     std::vector<Eigen::Affine3d> eigen_poses;
     /// publish the repeat path in
     for (unsigned i = 0; i < tactic.chain_->size(); i++) {
@@ -75,8 +76,8 @@ class TacticCallback : public TacticCallbackInterface {
     /// Publish the repeat path with an offset
     ROSPathMsg path;
     path.header.frame_id = "world (offset)";
-    auto& poses = path.poses;
-    for (const auto& pose : eigen_poses) {
+    auto &poses = path.poses;
+    for (const auto &pose : eigen_poses) {
       PoseStampedMsg ps;
       ps.pose = tf2::toMsg(pose);
       poses.push_back(ps);
@@ -84,8 +85,8 @@ class TacticCallback : public TacticCallbackInterface {
     loc_path_pub_->publish(path);
   }
 
-  void publishLocalizationRviz(const TacticV2& tactic,
-                               const QueryCache& qdata) override {
+  void publishLocalizationRviz(const Tactic &tactic,
+                               const QueryCache &qdata) override {
     auto lock = tactic.chain_->guard();
 
     /// Publish the current frame localized against in world frame
@@ -102,12 +103,12 @@ class TacticCallback : public TacticCallbackInterface {
     tf_bc_->sendTransform(msg);
   }
 
- private:
+private:
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_bc_;
   std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_bc_;
   rclcpp::Publisher<ROSPathMsg>::SharedPtr odo_path_pub_;
   rclcpp::Publisher<ROSPathMsg>::SharedPtr loc_path_pub_;
 };
 
-}  // namespace tactic
-}  // namespace vtr
+} // namespace tactic
+} // namespace vtr

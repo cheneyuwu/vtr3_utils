@@ -1,8 +1,8 @@
 #include "rclcpp/rclcpp.hpp"
 
 #include "vtr_logging/logging_init.hpp"
-#include "vtr_mission_planning_v2/test_utils.hpp"
-#include "vtr_navigation_v2/ros_mission_server.hpp"
+#include "vtr_mission_planning/test_utils.hpp"
+#include "vtr_navigation/ros_mission_server.hpp"
 
 using namespace vtr;
 using namespace vtr::logging;

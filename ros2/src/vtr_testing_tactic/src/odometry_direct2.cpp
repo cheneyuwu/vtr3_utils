@@ -14,9 +14,9 @@
 #include "vtr_lidar/pipeline.hpp"
 #include "vtr_logging/logging_init.hpp"
 #include "vtr_tactic/pipelines/factory.hpp"
-#include "vtr_tactic/tactic_v2.hpp"
+#include "vtr_tactic/tactic.hpp"
 
-#include "vtr_navigation_v2/navigator.hpp"
+#include "vtr_navigation/navigator.hpp"
 
 #include "vtr_testing_tactic/tactic_callback.hpp"
 
@@ -67,18 +67,21 @@ int main(int argc, char **argv) {
   graph_map_server->start(node, graph);
 
   // Pipeline
-  auto pipeline_factory = std::make_shared<ROSPipelineFactoryV2>(node);
+  auto pipeline_factory = std::make_shared<ROSPipelineFactory>(node);
   auto pipeline = pipeline_factory->get("pipeline");
 
   // Tactic Callback
   // auto callback = std::make_shared<TacticCallback>(node);
 
   // Tactic
-  auto tactic = std::make_shared<TacticV2>(
-      TacticV2::Config::fromROS(node), pipeline, pipeline->createOutputCache(),
+  auto tactic = std::make_shared<Tactic>(
+      Tactic::Config::fromROS(node), pipeline, pipeline->createOutputCache(),
       graph, graph_map_server);
-  tactic->setPipeline(PipelineMode::TeachBranch);
-  tactic->addRun();
+  {
+    auto lock = tactic->lockPipeline();
+    tactic->setPipeline(PipelineMode::TeachBranch);
+    tactic->addRun();
+  }
 
   // Frame and transforms
   std::string robot_frame = "robot";
@@ -105,8 +108,8 @@ int main(int argc, char **argv) {
   rosbag2_storage::StorageOptions storage_options;
   storage_options.uri = odo_dir.string();
   storage_options.storage_id = "sqlite3";
-  storage_options.max_bagfile_size = 0;  // default
-  storage_options.max_cache_size = 0;    // default
+  storage_options.max_bagfile_size = 0; // default
+  storage_options.max_cache_size = 0;   // default
   rosbag2_storage::StorageFilter filter;
   filter.topics.push_back("/points");
 
