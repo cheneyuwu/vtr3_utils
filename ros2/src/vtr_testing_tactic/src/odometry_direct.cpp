@@ -12,6 +12,7 @@
 #include "vtr_common/timing/time_utils.hpp"
 #include "vtr_common/utils/filesystem.hpp"
 #include "vtr_lidar/pipeline.hpp"
+#include "vtr_lidar/pipeline_v2.hpp"
 #include "vtr_logging/logging_init.hpp"
 #include "vtr_tactic/pipelines/factory.hpp"
 #include "vtr_tactic/rviz_tactic_callback.hpp"
@@ -28,7 +29,7 @@ int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
   auto node = rclcpp::Node::make_shared("navigator");
 
-  // Input directory sequence
+  // odometry sequence directory
   const auto odo_dir_str =
       node->declare_parameter<std::string>("odo_dir", "/tmp");
   fs::path odo_dir{utils::expand_user(utils::expand_env(odo_dir_str))};
@@ -126,8 +127,7 @@ int main(int argc, char **argv) {
     // some modules require node for visualization
     query_data->node = node;
 
-    /// \todo (yuchen) need to distinguish this with stamp
-    query_data->rcl_stamp.emplace(points->header.stamp);
+    // set timestamp
     storage::Timestamp timestamp =
         points->header.stamp.sec * 1e9 + points->header.stamp.nanosec;
     query_data->stamp.emplace(timestamp);

@@ -83,9 +83,6 @@ int main(int argc, char** argv) {
       // Convert message to query_data format and store into query_data
       auto query_data = std::make_shared<lidar::LidarQueryCache>();
 
-      /// \todo (yuchen) need to distinguish this with stamp
-      query_data->rcl_stamp.emplace(points->header.stamp);
-
       // set time stamp
       storage::Timestamp stamp =
           points->header.stamp.sec * 1e9 + points->header.stamp.nanosec;

@@ -138,8 +138,7 @@ int main(int argc, char **argv) {
     // some modules require node for visualization
     query_data->node = node;
 
-    /// \todo (yuchen) need to distinguish this with stamp
-    query_data->rcl_stamp.emplace(points->header.stamp);
+    // set timestamp
     storage::Timestamp timestamp =
         points->header.stamp.sec * 1e9 + points->header.stamp.nanosec;
     query_data->stamp.emplace(timestamp);

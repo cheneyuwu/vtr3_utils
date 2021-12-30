@@ -103,7 +103,7 @@ def main(data_dir):
   for _, odo_input in enumerate(odo_inputs):
     odo_dir = osp.join(data_dir, odo_input)
 
-    result_dir = osp.join(odo_dir, "boreas/graph/run_000000/data")
+    result_dir = osp.join(odo_dir, "graph/run_000000/data")
     if not osp.exists(result_dir):
       continue
     print("Looking at result directory:", result_dir)

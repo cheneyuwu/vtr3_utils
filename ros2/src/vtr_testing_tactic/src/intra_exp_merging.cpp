@@ -7,6 +7,7 @@
 #include "vtr_common/timing/time_utils.hpp"
 #include "vtr_common/utils/filesystem.hpp"
 #include "vtr_lidar/pipeline.hpp"
+#include "vtr_lidar/pipeline_v2.hpp"
 #include "vtr_logging/logging_init.hpp"
 
 using namespace vtr;
@@ -60,6 +61,7 @@ int main(int argc, char **argv) {
     lidar::LidarOutputCache output;
     qdata.node = node;
     qdata.intra_exp_merging_async.emplace(it->v()->id());
+
     module->runAsync(qdata, output, graph, nullptr, {}, {});
 
     // memory management

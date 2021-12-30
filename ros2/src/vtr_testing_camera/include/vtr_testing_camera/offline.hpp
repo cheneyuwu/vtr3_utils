@@ -92,9 +92,6 @@ class OfflineNavigator {
     // Convert message to query_data format and store into query_data
     auto query_data = std::make_shared<vision::CameraQueryCache>();
 
-    /// \todo (yuchen) need to differentiate this with stamp
-    query_data->rcl_stamp.fallback(node_->now());
-
     // set time stamp
     query_data->stamp.fallback(msg->vtr_header.sensor_time_stamp);
 

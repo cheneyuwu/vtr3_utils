@@ -94,7 +94,6 @@ int main(int argc, char **argv) {
       // get scan timestamp
       const auto stamp = locked_scan_msg.getTimestamp();
       qdata.stamp.emplace(stamp);
-      qdata.rcl_stamp.emplace(stamp);
 
       // get T_s_r
       const auto T_s_r = T_lidar_robot;

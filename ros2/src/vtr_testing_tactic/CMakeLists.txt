@@ -30,8 +30,8 @@ include_directories(
 add_executable(${PROJECT_NAME}_odometry_direct src/odometry_direct.cpp)
 ament_target_dependencies(${PROJECT_NAME}_odometry_direct rclcpp rosbag2 rosbag2_cpp vtr_lidar)
 
-# add_executable(${PROJECT_NAME}_localization_direct src/localization_direct.cpp)
-# ament_target_dependencies(${PROJECT_NAME}_localization_direct rclcpp rosbag2 rosbag2_cpp vtr_lidar)
+add_executable(${PROJECT_NAME}_localization_direct src/localization_direct.cpp)
+ament_target_dependencies(${PROJECT_NAME}_localization_direct rclcpp rosbag2 rosbag2_cpp vtr_lidar)
 
 add_executable(${PROJECT_NAME}_intra_exp_merging src/intra_exp_merging.cpp)
 ament_target_dependencies(${PROJECT_NAME}_intra_exp_merging rclcpp rosbag2 rosbag2_cpp vtr_lidar)
@@ -53,7 +53,7 @@ install(
 install(
   TARGETS
     ${PROJECT_NAME}_odometry_direct
-    # ${PROJECT_NAME}_localization_direct
+    ${PROJECT_NAME}_localization_direct
     ${PROJECT_NAME}_intra_exp_merging
     # ${PROJECT_NAME}_change_detection
     # ${PROJECT_NAME}_odometry_direct2

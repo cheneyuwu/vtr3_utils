@@ -12,11 +12,11 @@
 #include "vtr_common/timing/time_utils.hpp"
 #include "vtr_common/utils/filesystem.hpp"
 #include "vtr_lidar/pipeline.hpp"
+#include "vtr_lidar/pipeline_v2.hpp"
 #include "vtr_logging/logging_init.hpp"
 #include "vtr_tactic/pipelines/factory.hpp"
+#include "vtr_tactic/rviz_tactic_callback.hpp"
 #include "vtr_tactic/tactic.hpp"
-
-#include "vtr_testing_tactic/tactic_callback.hpp"
 
 #include "sensor_msgs/msg/point_cloud2.hpp"
 
@@ -69,13 +69,12 @@ int main(int argc, char **argv) {
   auto pipeline = pipeline_factory->get("pipeline");
 
   // Tactic Callback
-  auto callback = std::make_shared<TacticCallback>(node);
+  auto callback = std::make_shared<RvizTacticCallback>(node);
 
   // Tactic
-  auto tactic = std::make_shared<Tactic>(
-      Tactic::Config::fromROS(node), pipeline, pipeline->createOutputCache(),
-      graph, callback);
-
+  auto tactic =
+      std::make_shared<Tactic>(Tactic::Config::fromROS(node), pipeline,
+                               pipeline->createOutputCache(), graph, callback);
   tactic->setPipeline(PipelineMode::RepeatFollow);
   tactic->addRun();
 
@@ -125,8 +124,8 @@ int main(int argc, char **argv) {
   rosbag2_storage::StorageOptions storage_options;
   storage_options.uri = loc_dir.string();
   storage_options.storage_id = "sqlite3";
-  storage_options.max_bagfile_size = 0;  // default
-  storage_options.max_cache_size = 0;    // default
+  storage_options.max_bagfile_size = 0; // default
+  storage_options.max_cache_size = 0;   // default
   rosbag2_storage::StorageFilter filter;
   filter.topics.push_back("/points");
 
@@ -137,6 +136,7 @@ int main(int argc, char **argv) {
   rclcpp::Serialization<sensor_msgs::msg::PointCloud2> serializer;
 
   int frame = 0;
+  int terrain_type = 0;
   while (rclcpp::ok() && reader.has_next()) {
     // load rosbag2 message
     auto bag_message = reader.read_next();
@@ -145,9 +145,8 @@ int main(int argc, char **argv) {
     serializer.deserialize_message(&msg, points.get());
 
     LOG(WARNING) << "Loading point cloud frame " << frame << " with timestamp "
-                 << std::fixed
-                 << points->header.stamp.sec * 1e9 +
-                        points->header.stamp.nanosec;
+                 << (unsigned long)(points->header.stamp.sec * 1e9 +
+                                    points->header.stamp.nanosec);
 
     // Convert message to query_data format and store into query_data
     auto query_data = std::make_shared<lidar::LidarQueryCache>();
@@ -155,11 +154,15 @@ int main(int argc, char **argv) {
     // some modules require node for visualization
     query_data->node = node;
 
-    /// \todo (yuchen) need to distinguish this with stamp
-    query_data->rcl_stamp.emplace(points->header.stamp);
+    // set timestamp
     storage::Timestamp timestamp =
         points->header.stamp.sec * 1e9 + points->header.stamp.nanosec;
     query_data->stamp.emplace(timestamp);
+
+    // make up some environment info
+    tactic::EnvInfo env_info;
+    env_info.terrain_type = terrain_type;
+    query_data->env_info.emplace(env_info);
 
     // put in the pointcloud msg pointer into query data
     query_data->pointcloud_msg = points;
@@ -173,6 +176,10 @@ int main(int argc, char **argv) {
     tactic->input(query_data);
 
     ++frame;
+    if ((frame % 100) == 0) {
+      ++terrain_type;
+      terrain_type %= 5;
+    };
   }
 
   tactic.reset();

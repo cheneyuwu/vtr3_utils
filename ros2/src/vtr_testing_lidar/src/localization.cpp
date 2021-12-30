@@ -22,7 +22,7 @@ using namespace vtr::tactic;
 
 using LocEvaluator = eval::Mask::Privileged<RCGraph>::Caching;
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
   auto node = rclcpp::Node::make_shared("navigator");
 
@@ -82,8 +82,8 @@ int main(int argc, char** argv) {
     rosbag2_cpp::StorageOptions storage_options;
     storage_options.uri = input_dir.string();
     storage_options.storage_id = "sqlite3";
-    storage_options.max_bagfile_size = 0;  // default
-    storage_options.max_cache_size = 0;    // default
+    storage_options.max_bagfile_size = 0; // default
+    storage_options.max_cache_size = 0;   // default
     rosbag2_cpp::ConverterOptions converter_options;
     converter_options.input_serialization_format = "cdr";
     converter_options.output_serialization_format = "cdr";
@@ -95,10 +95,12 @@ int main(int argc, char** argv) {
 
     int frame_idx = 0;
     while (rclcpp::ok() && reader.has_next()) {
-      if (frame_idx == stop_frame) break;
+      if (frame_idx == stop_frame)
+        break;
       // load rosbag message
       auto bag_message = reader.read_next();
-      if (bag_message->topic_name != "/points") continue;
+      if (bag_message->topic_name != "/points")
+        continue;
 
       rclcpp::SerializedMessage msg(*bag_message->serialized_data);
       auto points = std::make_shared<sensor_msgs::msg::PointCloud2>();
@@ -110,9 +112,6 @@ int main(int argc, char** argv) {
 
       // Convert message to query_data format and store into query_data
       auto query_data = std::make_shared<lidar::LidarQueryCache>();
-
-      /// \todo (yuchen) need to distinguish this with stamp
-      query_data->rcl_stamp.emplace(points->header.stamp);
 
       // set time stamp
       storage::Timestamp stamp =

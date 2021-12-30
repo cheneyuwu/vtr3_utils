@@ -59,7 +59,18 @@ int main(int argc, char **argv) {
     lidar::LidarQueryCache qdata;
     lidar::LidarOutputCache output;
     qdata.node = node;
-    qdata.ground_extraction_async.emplace(it->v()->id());
+
+    // current vertex to localize against
+    qdata.map_id.emplace(it->v()->id());
+    // retrieve loc map
+    auto vertex = graph->at(it->v()->id());
+    const auto map_msg =
+        vertex->retrieve<lidar::PointMap<lidar::PointWithInfo>>(
+            "point_map", "vtr_lidar_msgs/msg/PointMap");
+    auto locked_map_msg_ref = map_msg->locked(); // lock the msg
+    auto &locked_map_msg = locked_map_msg_ref.get();
+    qdata.curr_map_loc.emplace(locked_map_msg.getData());
+
     module->runAsync(qdata, output, graph, nullptr, {}, {});
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     // memory management

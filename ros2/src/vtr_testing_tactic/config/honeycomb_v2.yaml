@@ -8,7 +8,7 @@
         ## ADD LOGGER IDS HERE
         # tactic
         "tactic",
-        # "tactic.module",
+        "tactic.module",
         # "tactic.module.live_mem_manager",
         # "tactic.module.graph_mem_manager",
         # mission planner
@@ -17,7 +17,7 @@
         # pose graph
         # "pose_graph",
         # pipeline specific
-        # "lidar.pipeline",
+        "lidar.pipeline",
         # "lidar.velodyne_converter",
         # "lidar.honeycomb_converter",
         # "lidar.preprocessing",
@@ -39,7 +39,7 @@
       task_queue_num_threads: 1
       task_queue_size: -1
 
-      enable_parallelization: false
+      enable_parallelization: true
       preprocessing_skippable: false
       odometry_mapping_skippable: false
       localization_skippable: false
@@ -51,9 +51,6 @@
 
       extrapolate_odometry: true # path tracker
 
-      visualize: true
-      vis_loc_path_offset: [0., 0., -10.]
-
       chain:
         min_cusp_distance: 1.5
         angle_weight: 7.0
@@ -61,9 +58,12 @@
         search_back_depth: 10
         distance_warning: 5.0
 
+      visualize: true
+      rviz_loc_path_offset: [0., 0., -10.]
+
     ############ pipeline configuration ############
     pipeline:
-      type: lidar
+      type: lidar_v2
 
       preprocessing: [
           # preprocessing thread modules
@@ -73,7 +73,6 @@
 
       odometry: [
           # odometry and mapping thread modules
-          "recall",
           "icp",
           "mapping",
           "keyframe_test",
@@ -101,6 +100,9 @@
         type: lidar.preprocessing_v2
 
         num_threads: 4
+
+        crop_range: 40.0
+
         frame_voxel_size: 0.1 # grid subsampling voxel size
 
         vertical_angle_res: 0.0132645 # vertical angle resolution in radius, equal to 0.76 degree documented in the manual
@@ -121,13 +123,8 @@
         visualize: true
 
     odometry:
-      recall:
-        type: lidar.odometry_map_recall
-
-        visualize: true
-
       icp:
-        type: lidar.odometry_icp_v2
+        type: lidar.odometry_icp_v3
 
         # Prior terms
         trajectory_smoothing: true
@@ -143,11 +140,9 @@
         num_threads: 4
         first_num_steps: 3
         initial_max_iter: 6
-        initial_num_samples: 12000
         initial_max_pairing_dist: 1.5
         initial_max_planar_dist: 1.0
         refined_max_iter: 50
-        refined_num_samples: 12000
         refined_max_pairing_dist: 1.0
         refined_max_planar_dist: 0.3
 
@@ -156,27 +151,22 @@
         visualize: true
 
       mapping:
-        type: lidar.odometry_map_merging
+        type: lidar.odometry_map_merging_v2
 
         map_voxel_size: 0.3
+        crop_box_range: 40.0
 
         visualize: true
 
       keyframe_test:
-        type: lidar.keyframe_test
+        type: lidar.keyframe_test_v2
 
-        min_translation: 1.0
-        min_rotation: 15.0
         max_translation: 3.0
         max_rotation: 30.0
 
-        min_matched_points_ratio: 0.6
-
-        max_num_points: 100000
-
       intra_exp_merging:
         type: "lidar.intra_exp_merging"
-        depth: 2
+        depth: 3
 
         visualize: true
 
@@ -220,7 +210,7 @@
         visualize: true
 
       icp:
-        type: lidar.localization_icp_v2
+        type: lidar.localization_icp_v3
 
         use_pose_prior: false
 

@@ -5,11 +5,11 @@
 #include "vtr_common/timing/time_utils.hpp"
 #include "vtr_common/utils/filesystem.hpp"
 #include "vtr_lidar/pipeline.hpp"
+#include "vtr_lidar/pipeline_v2.hpp"
 #include "vtr_logging/logging_init.hpp"
 #include "vtr_tactic/pipelines/factory.hpp"
+#include "vtr_tactic/rviz_tactic_callback.hpp"
 #include "vtr_tactic/tactic.hpp"
-
-#include "vtr_testing_boreas/tactic_callback.hpp"
 
 using namespace vtr;
 using namespace vtr::common;
@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
   auto node = rclcpp::Node::make_shared("navigator");
 
-  // Input directory sequence
+  // odometry sequence directory
   const auto odo_dir_str =
       node->declare_parameter<std::string>("odo_dir", "/tmp");
   fs::path odo_dir{utils::expand_user(utils::expand_env(odo_dir_str))};
@@ -110,13 +110,15 @@ int main(int argc, char **argv) {
 
   // Pipeline
   auto pipeline_factory = std::make_shared<ROSPipelineFactory>(node);
-  auto pipeline = pipeline_factory->make("pipeline");
+  auto pipeline = pipeline_factory->get("pipeline");
+
+  // Tactic Callback
+  auto callback = std::make_shared<RvizTacticCallback>(node);
 
   // Tactic
-  auto callback = std::make_shared<TacticCallback>(node);
-  auto tactic = std::make_shared<Tactic>(
-      Tactic::Config::fromROS(node), pipeline, pipeline->createOutputCache(),
-      graph, callback);
+  auto tactic =
+      std::make_shared<Tactic>(Tactic::Config::fromROS(node), pipeline,
+                               pipeline->createOutputCache(), graph, callback);
   tactic->setPipeline(PipelineMode::TeachBranch);
   tactic->addRun();
 
@@ -162,9 +164,13 @@ int main(int argc, char **argv) {
     // some modules require node for visualization
     query_data->node = node;
 
-    /// \todo (yuchen) need to distinguish this with stamp
-    query_data->rcl_stamp.emplace(timestamp);
+    // set timestamp
     query_data->stamp.emplace(timestamp);
+
+    // make up some environment info
+    tactic::EnvInfo env_info;
+    env_info.terrain_type = 0;
+    query_data->env_info.emplace(env_info);
 
     // put in the pointcloud msg pointer into query data
     query_data->points.emplace(std::move(points));
