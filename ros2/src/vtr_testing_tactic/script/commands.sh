@@ -2,9 +2,11 @@
 export VTHROOT=${VTRSRC}_utils/ros2/src/vtr_testing_tactic
 export VTHCONFIG=${VTHROOT}/config
 export VTHDATA=${VTRDATA}
-export VTHRESULT=${VTRTEMP}/testing/lidar
-export DATASET=${VTHDATA}/utias_20211101_parkinglot_shorter_sequence
+export VTHRESULT=${VTRTEMP}/testing/multienv
+export DATASET=${VTHDATA}/utias_20211230_multiple_terrain/sloped
 mkdir -p ${VTHRESULT}
+
+source ${VTRSRC}_utils/ros2/install/setup.bash
 
 ## Perform odometry on a sequence directly
 ODO_INPUT=rosbag2_2021_11_06-11_45_39
@@ -18,13 +20,10 @@ ros2 run vtr_testing_tactic vtr_testing_tactic_odometry_direct  \
 ODO_INPUT=rosbag2_2021_11_06-11_45_39
 LOC_INPUT=rosbag2_2021_11_01-18_05_58
 
-cp -r ${VTHRESULT}/${ODO_INPUT}/${ODO_INPUT} \
-  ${VTHRESULT}/${ODO_INPUT}/${ODO_INPUT}_v1
-
+cp -r ${VTHRESULT}/${ODO_INPUT}/${ODO_INPUT}  ${VTHRESULT}/${ODO_INPUT}/${ODO_INPUT}.bak
 rm -r ${VTHRESULT}/${ODO_INPUT}/${LOC_INPUT}
 mkdir -p ${VTHRESULT}/${ODO_INPUT}/${LOC_INPUT}
-cp -r ${VTHRESULT}/${ODO_INPUT}/${ODO_INPUT}/* \
-  ${VTHRESULT}/${ODO_INPUT}/${LOC_INPUT}
+cp -r ${VTHRESULT}/${ODO_INPUT}/${ODO_INPUT}/*  ${VTHRESULT}/${ODO_INPUT}/${LOC_INPUT}
 
 ros2 run vtr_testing_tactic vtr_testing_tactic_localization_direct \
   --ros-args  -r __ns:=/vtr  --params-file ${VTHCONFIG}/honeycomb_v2.yaml \

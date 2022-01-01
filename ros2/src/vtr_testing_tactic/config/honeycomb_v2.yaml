@@ -86,7 +86,9 @@
           # localization thread modules
           "recall",
           "icp",
-          # "change_detection",
+          "change_detection",
+          "ground_extraction",
+          "obstacle_detection",
           "memory",
         ]
 
@@ -154,7 +156,8 @@
         type: lidar.odometry_map_merging_v2
 
         map_voxel_size: 0.3
-        crop_box_range: 40.0
+        crop_range_front: 40.0
+        back_over_front_ratio: 0.5
 
         visualize: true
 
@@ -244,6 +247,19 @@
         run_async: true
         visualize: true
 
+      obstacle_detection:
+        type: "lidar.obstacle_detection"
+
+        z_min: 0.5
+        z_max: 2.0
+
+        resolution: 0.6
+        size_x: 40.0
+        size_y: 20.0
+
+        run_async: true
+        visualize: true
+
       ground_extraction:
         type: "lidar.ground_extraction"
 
@@ -263,7 +279,7 @@
         num_bins_large: 10
         bin_size_large: 1.0
 
-        resolution: 0.5
+        resolution: 0.6
         size_x: 40.0
         size_y: 20.0
 

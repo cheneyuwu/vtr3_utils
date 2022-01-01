@@ -97,7 +97,7 @@ int main(int argc, char **argv) {
   }
   LOG(WARNING) << ss.str();
 
-  tactic->setPath(sequence, true);
+  tactic->setPath(sequence);
 
   // Frame and transforms
   std::string robot_frame = "robot";
@@ -124,8 +124,8 @@ int main(int argc, char **argv) {
   rosbag2_storage::StorageOptions storage_options;
   storage_options.uri = loc_dir.string();
   storage_options.storage_id = "sqlite3";
-  storage_options.max_bagfile_size = 0; // default
-  storage_options.max_cache_size = 0;   // default
+  storage_options.max_bagfile_size = 0;  // default
+  storage_options.max_cache_size = 0;    // default
   rosbag2_storage::StorageFilter filter;
   filter.topics.push_back("/points");
 
