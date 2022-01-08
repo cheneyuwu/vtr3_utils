@@ -11,21 +11,57 @@
 
 #include "vtr_common/timing/utils.hpp"
 #include "vtr_common/utils/filesystem.hpp"
-#include "vtr_lidar/pipeline.hpp"
+#include "vtr_path_planning/teb/teb_path_planner.hpp"
+// weird bug where must include before pipeline_v2.hpp
 #include "vtr_lidar/pipeline_v2.hpp"
 #include "vtr_logging/logging_init.hpp"
+#include "vtr_path_planning/mpc/mpc_path_planner.hpp"
 #include "vtr_tactic/pipelines/factory.hpp"
 #include "vtr_tactic/rviz_tactic_callback.hpp"
 #include "vtr_tactic/tactic.hpp"
 
+#include "rosgraph_msgs/msg/clock.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 
 using namespace vtr;
 using namespace vtr::common;
 using namespace vtr::logging;
 using namespace vtr::tactic;
+using namespace vtr::path_planning;
 
-int main(int argc, char **argv) {
+namespace vtr {
+namespace path_planning {
+
+class TestCommandPublisher : public BasePathPlanner::Callback {
+ public:
+  PTR_TYPEDEFS(TestCommandPublisher);
+
+  TestCommandPublisher(const rclcpp::Node::SharedPtr& node) : node_(node) {
+    command_pub_ = node->create_publisher<Command>("command", 10);
+  }
+
+  tactic::Timestamp getCurrentTime() const override {
+    return node_->now().nanoseconds();
+  }
+
+  void commandReceived(const Command& command) override {
+    CLOG(DEBUG, "path_planning")
+        << "Received control command: [" << command.linear.x << ", "
+        << command.linear.y << ", " << command.linear.z << ", "
+        << command.angular.x << ", " << command.angular.y << ", "
+        << command.angular.z << "]";
+    command_pub_->publish(command);
+  }
+
+ private:
+  const rclcpp::Node::SharedPtr node_;
+  rclcpp::Publisher<Command>::SharedPtr command_pub_;
+};
+
+}  // namespace path_planning
+}  // namespace vtr
+
+int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
   auto node = rclcpp::Node::make_shared("navigator");
 
@@ -33,6 +69,11 @@ int main(int argc, char **argv) {
   const auto odo_dir_str =
       node->declare_parameter<std::string>("odo_dir", "/tmp");
   fs::path odo_dir{utils::expand_user(utils::expand_env(odo_dir_str))};
+
+  // localization sequence directory
+  const auto loc_dir_str =
+      node->declare_parameter<std::string>("loc_dir", "/tmp");
+  fs::path loc_dir{utils::expand_user(utils::expand_env(loc_dir_str))};
 
   // Output directory
   const auto data_dir_str =
@@ -53,14 +94,16 @@ int main(int argc, char **argv) {
   configureLogging(log_filename, log_debug, log_enabled);
 
   LOG(WARNING) << "Odometry Directory: " << odo_dir.string();
+  LOG(WARNING) << "Localization Directory: " << loc_dir.string();
   LOG(WARNING) << "Output Directory: " << data_dir.string();
 
   // Pose graph
-  auto graph = tactic::Graph::MakeShared((data_dir / "graph").string(), false);
+  auto graph = tactic::Graph::MakeShared((data_dir / "graph").string(), true);
 
   // Pipeline
   auto pipeline_factory = std::make_shared<ROSPipelineFactory>(node);
   auto pipeline = pipeline_factory->get("pipeline");
+  auto pipeline_output = pipeline->createOutputCache();
 
   // Tactic Callback
   auto callback = std::make_shared<RvizTacticCallback>(node);
@@ -68,9 +111,36 @@ int main(int argc, char **argv) {
   // Tactic
   auto tactic =
       std::make_shared<Tactic>(Tactic::Config::fromROS(node), pipeline,
-                               pipeline->createOutputCache(), graph, callback);
-  tactic->setPipeline(PipelineMode::TeachBranch);
+                               pipeline_output, graph, callback);
+  tactic->setPipeline(PipelineMode::RepeatFollow);
   tactic->addRun();
+
+  // Planner
+  auto planner = std::make_shared<TEBPathPlanner>(
+      node, TEBPathPlanner::Config::fromROS(node), pipeline_output,
+      std::make_shared<TestCommandPublisher>(node));
+  planner->setRunning(true);
+
+  // Get the path that we should repeat
+  VertexId::Vector sequence;
+  sequence.reserve(graph->numberOfVertices());
+  LOG(WARNING) << "Total number of vertices: " << graph->numberOfVertices();
+  // Extract the privileged sub graph from the full graph.
+  using LocEvaluator =
+      pose_graph::eval::Mask::Privileged<tactic::Graph>::Caching;
+  LocEvaluator::Ptr evaluator(new LocEvaluator());
+  evaluator->setGraph(graph.get());
+  auto privileged_path = graph->getSubgraph(0ul, evaluator);
+  std::stringstream ss;
+  ss << "Repeat vertices: ";
+  for (auto it = privileged_path->begin(0ul); it != privileged_path->end();
+       ++it) {
+    ss << it->v()->id() << " ";
+    sequence.push_back(it->v()->id());
+  }
+  LOG(WARNING) << ss.str();
+
+  tactic->setPath(sequence);
 
   // Frame and transforms
   std::string robot_frame = "robot";
@@ -90,12 +160,15 @@ int main(int argc, char **argv) {
   msg.child_frame_id = robot_frame;
   tf_sbc->sendTransform(msg);
 
+  const auto clock_publisher =
+      node->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 10);
+
   // Load dataset
   rosbag2_cpp::ConverterOptions converter_options;
   converter_options.input_serialization_format = "cdr";
   converter_options.output_serialization_format = "cdr";
   rosbag2_storage::StorageOptions storage_options;
-  storage_options.uri = odo_dir.string();
+  storage_options.uri = loc_dir.string();
   storage_options.storage_id = "sqlite3";
   storage_options.max_bagfile_size = 0;  // default
   storage_options.max_cache_size = 0;    // default
@@ -120,6 +193,11 @@ int main(int argc, char **argv) {
     LOG(WARNING) << "Loading point cloud frame " << frame << " with timestamp "
                  << (unsigned long)(points->header.stamp.sec * 1e9 +
                                     points->header.stamp.nanosec);
+
+    // publish clock for sim time
+    auto time_msg = rosgraph_msgs::msg::Clock();
+    time_msg.clock = points->header.stamp;
+    clock_publisher->publish(time_msg);
 
     // Convert message to query_data format and store into query_data
     auto query_data = std::make_shared<lidar::LidarQueryCache>();
@@ -155,6 +233,9 @@ int main(int argc, char **argv) {
     };
   }
 
+  planner->setRunning(false);
+  planner.reset();
+
   tactic.reset();
 
   callback.reset();
@@ -165,7 +246,7 @@ int main(int argc, char **argv) {
   LOG(WARNING) << "Saving pose graph and reset.";
   graph->save();
   graph.reset();
-  LOG(WARNING) << "Saving pose graph and reset. - done!";
+  LOG(WARNING) << "Saving pose graph and reset. - DONE!";
 
   rclcpp::shutdown();
 }

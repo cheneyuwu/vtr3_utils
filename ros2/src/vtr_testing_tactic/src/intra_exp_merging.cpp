@@ -4,7 +4,7 @@
 
 #include "std_msgs/msg/bool.hpp"
 
-#include "vtr_common/timing/time_utils.hpp"
+#include "vtr_common/timing/utils.hpp"
 #include "vtr_common/utils/filesystem.hpp"
 #include "vtr_lidar/pipeline.hpp"
 #include "vtr_lidar/pipeline_v2.hpp"
@@ -63,6 +63,7 @@ int main(int argc, char **argv) {
     qdata.intra_exp_merging_async.emplace(it->v()->id());
 
     module->runAsync(qdata, output, graph, nullptr, {}, {});
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     // memory management
     ids.push(it->v()->id());

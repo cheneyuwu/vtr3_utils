@@ -9,7 +9,7 @@
 #include "rosbag2_cpp/readers/sequential_reader.hpp"
 #include "rosbag2_cpp/storage_options.hpp"
 
-#include "vtr_common/timing/time_utils.hpp"
+#include "vtr_common/timing/utils.hpp"
 #include "vtr_common/utils/filesystem.hpp"
 #include "vtr_lidar/pipeline.hpp"
 #include "vtr_lidar/pipeline_v2.hpp"
@@ -183,10 +183,16 @@ int main(int argc, char **argv) {
   }
 
   tactic.reset();
+
+  callback.reset();
+
+  pipeline.reset();
+  pipeline_factory.reset();
+
   LOG(WARNING) << "Saving pose graph and reset.";
   graph->save();
   graph.reset();
-  LOG(WARNING) << "Saving pose graph and reset. - done!";
+  LOG(WARNING) << "Saving pose graph and reset. - DONE!";
 
   rclcpp::shutdown();
 }

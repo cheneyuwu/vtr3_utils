@@ -8,7 +8,7 @@
         ## ADD LOGGER IDS HERE
         # tactic
         "tactic",
-        # "tactic.module",
+        "tactic.module",
         # "tactic.module.live_mem_manager",
         # "tactic.module.graph_mem_manager",
         # mission planner
@@ -31,7 +31,7 @@
         # "lidar.dynamic_detection",
         # "lidar.inter_exp_merging",
         # "lidar.change_detection",
-        "lidar.ground_extraction",
+        # "lidar.ground_extraction",
       ]
 
     ############ tactic configuration ############

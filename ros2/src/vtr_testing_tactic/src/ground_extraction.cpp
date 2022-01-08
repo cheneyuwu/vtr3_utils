@@ -4,7 +4,7 @@
 
 #include "std_msgs/msg/bool.hpp"
 
-#include "vtr_common/timing/time_utils.hpp"
+#include "vtr_common/timing/utils.hpp"
 #include "vtr_common/utils/filesystem.hpp"
 #include "vtr_lidar/pipeline.hpp"
 #include "vtr_logging/logging_init.hpp"
@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
     qdata.curr_map_loc.emplace(locked_map_msg.getData());
 
     module->runAsync(qdata, output, graph, nullptr, {}, {});
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     // memory management
     ids.push(it->v()->id());
     if (ids.size() > depth) {

@@ -9,7 +9,7 @@
 #include "rosbag2_cpp/readers/sequential_reader.hpp"
 #include "rosbag2_cpp/storage_options.hpp"
 
-#include "vtr_common/timing/time_utils.hpp"
+#include "vtr_common/timing/utils.hpp"
 #include "vtr_common/utils/filesystem.hpp"
 #include "vtr_lidar/pipeline.hpp"
 #include "vtr_logging/logging_init.hpp"

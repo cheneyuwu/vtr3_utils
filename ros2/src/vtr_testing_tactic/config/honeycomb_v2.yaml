@@ -7,17 +7,20 @@
     log_enabled: [
         ## ADD LOGGER IDS HERE
         # tactic
-        "tactic",
-        "tactic.module",
+        # "tactic",
+        # "tactic.module",
         # "tactic.module.live_mem_manager",
         # "tactic.module.graph_mem_manager",
+        # path planner
+        "path_planning",
+        "path_planning.teb",
         # mission planner
         # "mission.server",
         # "mission.state_machine",
         # pose graph
         # "pose_graph",
         # pipeline specific
-        "lidar.pipeline",
+        # "lidar.pipeline",
         # "lidar.velodyne_converter",
         # "lidar.honeycomb_converter",
         # "lidar.preprocessing",
@@ -31,7 +34,8 @@
         # "lidar.dynamic_detection",
         # "lidar.inter_exp_merging",
         # "lidar.change_detection",
-        "lidar.ground_extraction",
+        # "lidar.ground_extraction",
+        # "lidar.obstacle_detection",
       ]
 
     ############ tactic configuration ############
@@ -59,7 +63,7 @@
         distance_warning: 5.0
 
       visualize: true
-      rviz_loc_path_offset: [0., 0., -10.]
+      rviz_loc_path_offset: [0., 0., 0.]
 
     ############ pipeline configuration ############
     pipeline:
@@ -140,8 +144,9 @@
 
         # ICP parameters
         num_threads: 4
-        first_num_steps: 3
-        initial_max_iter: 6
+        first_num_steps: 2
+        averaging_num_steps: 2
+        initial_max_iter: 4
         initial_max_pairing_dist: 1.5
         initial_max_planar_dist: 1.0
         refined_max_iter: 50
@@ -219,13 +224,12 @@
 
         # ICP parameters
         num_threads: 4
-        first_num_steps: 3
-        initial_max_iter: 10
-        initial_num_samples: 12000
+        first_num_steps: 2
+        averaging_num_steps: 2
+        initial_max_iter: 4
         initial_max_pairing_dist: 1.5
         initial_max_planar_dist: 1.0
         refined_max_iter: 50
-        refined_num_samples: 12000
         refined_max_pairing_dist: 1.0
         refined_max_planar_dist: 0.3
 
@@ -285,3 +289,14 @@
 
         run_async: true
         visualize: true
+
+    ############ tactic configuration ############
+    path_planning:
+      control_period: 100 # ms
+      teb:
+        # vtr specific
+        visualize: true
+        extrapolate: true
+        # teb specific
+        map_frame: "planning frame"
+        enable_homotopy_class_planning: true
