@@ -8,6 +8,7 @@
 #include "vtr_common/utils/filesystem.hpp"
 #include "vtr_lidar/pipeline.hpp"
 #include "vtr_logging/logging_init.hpp"
+#include "vtr_tactic/modules/factory.hpp"
 
 using namespace vtr;
 using namespace vtr::common;
@@ -67,7 +68,7 @@ int main(int argc, char **argv) {
     const auto map_msg =
         vertex->retrieve<lidar::PointMap<lidar::PointWithInfo>>(
             "point_map", "vtr_lidar_msgs/msg/PointMap");
-    auto locked_map_msg_ref = map_msg->locked(); // lock the msg
+    auto locked_map_msg_ref = map_msg->locked();  // lock the msg
     auto &locked_map_msg = locked_map_msg_ref.get();
     qdata.curr_map_loc.emplace(locked_map_msg.getData());
 

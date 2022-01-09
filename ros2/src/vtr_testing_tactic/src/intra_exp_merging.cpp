@@ -9,6 +9,7 @@
 #include "vtr_lidar/pipeline.hpp"
 #include "vtr_lidar/pipeline_v2.hpp"
 #include "vtr_logging/logging_init.hpp"
+#include "vtr_tactic/modules/factory.hpp"
 
 using namespace vtr;
 using namespace vtr::common;

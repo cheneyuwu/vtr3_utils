@@ -9,19 +9,21 @@
 #include "rosbag2_cpp/readers/sequential_reader.hpp"
 #include "rosbag2_cpp/storage_options.hpp"
 
+#include "rosgraph_msgs/msg/clock.hpp"
+#include "sensor_msgs/msg/point_cloud2.hpp"
+
 #include "vtr_common/timing/utils.hpp"
 #include "vtr_common/utils/filesystem.hpp"
-#include "vtr_path_planning/teb/teb_path_planner.hpp"
-// weird bug where must include before pipeline_v2.hpp
-#include "vtr_lidar/pipeline_v2.hpp"
-#include "vtr_logging/logging_init.hpp"
-#include "vtr_path_planning/mpc/mpc_path_planner.hpp"
+#include "vtr_path_planning/factory.hpp"
 #include "vtr_tactic/pipelines/factory.hpp"
 #include "vtr_tactic/rviz_tactic_callback.hpp"
 #include "vtr_tactic/tactic.hpp"
 
-#include "rosgraph_msgs/msg/clock.hpp"
-#include "sensor_msgs/msg/point_cloud2.hpp"
+#include "vtr_lidar/pipeline_v2.hpp"
+#include "vtr_path_planning/mpc/mpc_path_planner.hpp"
+#include "vtr_path_planning/teb/teb_path_planner.hpp"
+
+#include "vtr_logging/logging_init.hpp"
 
 using namespace vtr;
 using namespace vtr::common;
@@ -93,9 +95,9 @@ int main(int argc, char** argv) {
   }
   configureLogging(log_filename, log_debug, log_enabled);
 
-  LOG(WARNING) << "Odometry Directory: " << odo_dir.string();
-  LOG(WARNING) << "Localization Directory: " << loc_dir.string();
-  LOG(WARNING) << "Output Directory: " << data_dir.string();
+  CLOG(WARNING, "test") << "Odometry Directory: " << odo_dir.string();
+  CLOG(WARNING, "test") << "Localization Directory: " << loc_dir.string();
+  CLOG(WARNING, "test") << "Output Directory: " << data_dir.string();
 
   // Pose graph
   auto graph = tactic::Graph::MakeShared((data_dir / "graph").string(), true);
@@ -104,6 +106,8 @@ int main(int argc, char** argv) {
   auto pipeline_factory = std::make_shared<ROSPipelineFactory>(node);
   auto pipeline = pipeline_factory->get("pipeline");
   auto pipeline_output = pipeline->createOutputCache();
+  // some modules require node for visualization
+  pipeline_output->node = node;
 
   // Tactic Callback
   auto callback = std::make_shared<RvizTacticCallback>(node);
@@ -116,15 +120,17 @@ int main(int argc, char** argv) {
   tactic->addRun();
 
   // Planner
-  auto planner = std::make_shared<TEBPathPlanner>(
-      node, TEBPathPlanner::Config::fromROS(node), pipeline_output,
-      std::make_shared<TestCommandPublisher>(node));
+  auto planner_factory = std::make_shared<ROSPathPlannerFactory>(node);
+  auto planner =
+      planner_factory->get("path_planning", pipeline_output,
+                           std::make_shared<TestCommandPublisher>(node));
   planner->setRunning(true);
 
   // Get the path that we should repeat
   VertexId::Vector sequence;
   sequence.reserve(graph->numberOfVertices());
-  LOG(WARNING) << "Total number of vertices: " << graph->numberOfVertices();
+  CLOG(WARNING, "test") << "Total number of vertices: "
+                        << graph->numberOfVertices();
   // Extract the privileged sub graph from the full graph.
   using LocEvaluator =
       pose_graph::eval::Mask::Privileged<tactic::Graph>::Caching;
@@ -138,7 +144,7 @@ int main(int argc, char** argv) {
     ss << it->v()->id() << " ";
     sequence.push_back(it->v()->id());
   }
-  LOG(WARNING) << ss.str();
+  CLOG(WARNING, "test") << ss.str();
 
   tactic->setPath(sequence);
 
@@ -151,8 +157,8 @@ int main(int argc, char** argv) {
   T_lidar_robot_mat << 1, 0, 0, -0.06, 0, 1, 0, 0, 0, 0, 1, -1.45, 0, 0, 0, 1;
   EdgeTransform T_lidar_robot(T_lidar_robot_mat);
   T_lidar_robot.setZeroCovariance();
-  LOG(WARNING) << "Transform from " << robot_frame << " to " << lidar_frame
-               << " has been set to" << T_lidar_robot;
+  CLOG(WARNING, "test") << "Transform from " << robot_frame << " to "
+                        << lidar_frame << " has been set to" << T_lidar_robot;
 
   auto tf_sbc = std::make_shared<tf2_ros::StaticTransformBroadcaster>(node);
   auto msg = tf2::eigenToTransform(Eigen::Affine3d(T_lidar_robot.matrix()));
@@ -190,9 +196,10 @@ int main(int argc, char** argv) {
     auto points = std::make_shared<sensor_msgs::msg::PointCloud2>();
     serializer.deserialize_message(&msg, points.get());
 
-    LOG(WARNING) << "Loading point cloud frame " << frame << " with timestamp "
-                 << (unsigned long)(points->header.stamp.sec * 1e9 +
-                                    points->header.stamp.nanosec);
+    CLOG(WARNING, "test") << "Loading point cloud frame " << frame
+                          << " with timestamp "
+                          << (unsigned long)(points->header.stamp.sec * 1e9 +
+                                             points->header.stamp.nanosec);
 
     // publish clock for sim time
     auto time_msg = rosgraph_msgs::msg::Clock();
@@ -243,10 +250,10 @@ int main(int argc, char** argv) {
   pipeline.reset();
   pipeline_factory.reset();
 
-  LOG(WARNING) << "Saving pose graph and reset.";
+  CLOG(WARNING, "test") << "Saving pose graph and reset.";
   graph->save();
   graph.reset();
-  LOG(WARNING) << "Saving pose graph and reset. - DONE!";
+  CLOG(WARNING, "test") << "Saving pose graph and reset. - DONE!";
 
   rclcpp::shutdown();
 }

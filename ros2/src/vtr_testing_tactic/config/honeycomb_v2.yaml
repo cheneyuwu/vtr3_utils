@@ -292,6 +292,7 @@
 
     ############ tactic configuration ############
     path_planning:
+      type: teb
       control_period: 100 # ms
       teb:
         # vtr specific
@@ -300,3 +301,7 @@
         # teb specific
         map_frame: "planning frame"
         enable_homotopy_class_planning: true
+
+        free_goal_vel: true
+        max_vel_x: 1.0
+        min_turning_radius: 1.0
