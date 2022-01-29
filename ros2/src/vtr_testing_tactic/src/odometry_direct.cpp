@@ -9,16 +9,15 @@
 #include "rosbag2_cpp/readers/sequential_reader.hpp"
 #include "rosbag2_cpp/storage_options.hpp"
 
+#include "sensor_msgs/msg/point_cloud2.hpp"
+
 #include "vtr_common/timing/utils.hpp"
 #include "vtr_common/utils/filesystem.hpp"
-#include "vtr_lidar/pipeline.hpp"
 #include "vtr_lidar/pipeline_v2.hpp"
 #include "vtr_logging/logging_init.hpp"
 #include "vtr_tactic/pipelines/factory.hpp"
 #include "vtr_tactic/rviz_tactic_callback.hpp"
 #include "vtr_tactic/tactic.hpp"
-
-#include "sensor_msgs/msg/point_cloud2.hpp"
 
 using namespace vtr;
 using namespace vtr::common;
@@ -52,8 +51,8 @@ int main(int argc, char **argv) {
   }
   configureLogging(log_filename, log_debug, log_enabled);
 
-  LOG(WARNING) << "Odometry Directory: " << odo_dir.string();
-  LOG(WARNING) << "Output Directory: " << data_dir.string();
+  CLOG(WARNING, "test") << "Odometry Directory: " << odo_dir.string();
+  CLOG(WARNING, "test") << "Output Directory: " << data_dir.string();
 
   // Pose graph
   auto graph = tactic::Graph::MakeShared((data_dir / "graph").string(), false);
@@ -61,6 +60,9 @@ int main(int argc, char **argv) {
   // Pipeline
   auto pipeline_factory = std::make_shared<ROSPipelineFactory>(node);
   auto pipeline = pipeline_factory->get("pipeline");
+  auto pipeline_output = pipeline->createOutputCache();
+  // some modules require node for visualization
+  pipeline_output->node = node;
 
   // Tactic Callback
   auto callback = std::make_shared<RvizTacticCallback>(node);
@@ -68,7 +70,7 @@ int main(int argc, char **argv) {
   // Tactic
   auto tactic =
       std::make_shared<Tactic>(Tactic::Config::fromROS(node), pipeline,
-                               pipeline->createOutputCache(), graph, callback);
+                               pipeline_output, graph, callback);
   tactic->setPipeline(PipelineMode::TeachBranch);
   tactic->addRun();
 
@@ -81,13 +83,14 @@ int main(int argc, char **argv) {
   T_lidar_robot_mat << 1, 0, 0, -0.06, 0, 1, 0, 0, 0, 0, 1, -1.45, 0, 0, 0, 1;
   EdgeTransform T_lidar_robot(T_lidar_robot_mat);
   T_lidar_robot.setZeroCovariance();
-  LOG(WARNING) << "Transform from " << robot_frame << " to " << lidar_frame
-               << " has been set to" << T_lidar_robot;
+  CLOG(WARNING, "test") << "Transform from " << robot_frame << " to "
+                        << lidar_frame << " has been set to" << T_lidar_robot;
 
   auto tf_sbc = std::make_shared<tf2_ros::StaticTransformBroadcaster>(node);
-  auto msg = tf2::eigenToTransform(Eigen::Affine3d(T_lidar_robot.matrix()));
-  msg.header.frame_id = lidar_frame;
-  msg.child_frame_id = robot_frame;
+  auto msg =
+      tf2::eigenToTransform(Eigen::Affine3d(T_lidar_robot.inverse().matrix()));
+  msg.header.frame_id = robot_frame;
+  msg.child_frame_id = lidar_frame;
   tf_sbc->sendTransform(msg);
 
   // Load dataset
@@ -108,6 +111,9 @@ int main(int argc, char **argv) {
 
   rclcpp::Serialization<sensor_msgs::msg::PointCloud2> serializer;
 
+  using common::timing::Stopwatch;
+  Stopwatch timer(false);
+
   int frame = 0;
   int terrain_type = 0;
   while (rclcpp::ok() && reader.has_next()) {
@@ -117,9 +123,11 @@ int main(int argc, char **argv) {
     auto points = std::make_shared<sensor_msgs::msg::PointCloud2>();
     serializer.deserialize_message(&msg, points.get());
 
-    LOG(WARNING) << "Loading point cloud frame " << frame << " with timestamp "
-                 << (unsigned long)(points->header.stamp.sec * 1e9 +
-                                    points->header.stamp.nanosec);
+    CLOG(WARNING, "test") << "Loading point cloud frame " << frame
+                          << " with timestamp "
+                          << (unsigned long)(points->header.stamp.sec * 1e9 +
+                                             points->header.stamp.nanosec);
+    timer.start();
 
     // Convert message to query_data format and store into query_data
     auto query_data = std::make_shared<lidar::LidarQueryCache>();
@@ -153,6 +161,12 @@ int main(int argc, char **argv) {
       ++terrain_type;
       terrain_type %= 5;
     };
+
+    CLOG(WARNING, "test") << "Point cloud frame " << frame << " with timestamp "
+                          << (unsigned long)(points->header.stamp.sec * 1e9 +
+                                             points->header.stamp.nanosec)
+                          << " took " << timer;
+    timer.reset();
   }
 
   tactic.reset();
@@ -162,10 +176,10 @@ int main(int argc, char **argv) {
   pipeline.reset();
   pipeline_factory.reset();
 
-  LOG(WARNING) << "Saving pose graph and reset.";
+  CLOG(WARNING, "test") << "Saving pose graph and reset.";
   graph->save();
   graph.reset();
-  LOG(WARNING) << "Saving pose graph and reset. - done!";
+  CLOG(WARNING, "test") << "Saving pose graph and reset. - DONE!";
 
   rclcpp::shutdown();
 }

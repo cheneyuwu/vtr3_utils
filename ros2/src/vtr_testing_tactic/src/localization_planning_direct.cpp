@@ -14,16 +14,14 @@
 
 #include "vtr_common/timing/utils.hpp"
 #include "vtr_common/utils/filesystem.hpp"
+#include "vtr_lidar/path_planning.hpp"
+#include "vtr_lidar/pipeline_v2.hpp"
+#include "vtr_logging/logging_init.hpp"
 #include "vtr_path_planning/factory.hpp"
+#include "vtr_path_planning/path_planning.hpp"
 #include "vtr_tactic/pipelines/factory.hpp"
 #include "vtr_tactic/rviz_tactic_callback.hpp"
 #include "vtr_tactic/tactic.hpp"
-
-#include "vtr_lidar/pipeline_v2.hpp"
-#include "vtr_path_planning/mpc/mpc_path_planner.hpp"
-#include "vtr_path_planning/teb/teb_path_planner.hpp"
-
-#include "vtr_logging/logging_init.hpp"
 
 using namespace vtr;
 using namespace vtr::common;
@@ -38,7 +36,7 @@ class TestCommandPublisher : public BasePathPlanner::Callback {
  public:
   PTR_TYPEDEFS(TestCommandPublisher);
 
-  TestCommandPublisher(const rclcpp::Node::SharedPtr& node) : node_(node) {
+  TestCommandPublisher(const rclcpp::Node::SharedPtr &node) : node_(node) {
     command_pub_ = node->create_publisher<Command>("command", 10);
   }
 
@@ -46,7 +44,7 @@ class TestCommandPublisher : public BasePathPlanner::Callback {
     return node_->now().nanoseconds();
   }
 
-  void commandReceived(const Command& command) override {
+  void commandReceived(const Command &command) override {
     CLOG(DEBUG, "path_planning")
         << "Received control command: [" << command.linear.x << ", "
         << command.linear.y << ", " << command.linear.z << ", "
@@ -63,7 +61,7 @@ class TestCommandPublisher : public BasePathPlanner::Callback {
 }  // namespace path_planning
 }  // namespace vtr
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
   auto node = rclcpp::Node::make_shared("navigator");
 
@@ -161,9 +159,10 @@ int main(int argc, char** argv) {
                         << lidar_frame << " has been set to" << T_lidar_robot;
 
   auto tf_sbc = std::make_shared<tf2_ros::StaticTransformBroadcaster>(node);
-  auto msg = tf2::eigenToTransform(Eigen::Affine3d(T_lidar_robot.matrix()));
-  msg.header.frame_id = lidar_frame;
-  msg.child_frame_id = robot_frame;
+  auto msg =
+      tf2::eigenToTransform(Eigen::Affine3d(T_lidar_robot.inverse().matrix()));
+  msg.header.frame_id = robot_frame;
+  msg.child_frame_id = lidar_frame;
   tf_sbc->sendTransform(msg);
 
   const auto clock_publisher =
@@ -187,6 +186,9 @@ int main(int argc, char** argv) {
 
   rclcpp::Serialization<sensor_msgs::msg::PointCloud2> serializer;
 
+  using common::timing::Stopwatch;
+  Stopwatch timer(false);
+
   int frame = 0;
   int terrain_type = 0;
   while (rclcpp::ok() && reader.has_next()) {
@@ -200,6 +202,7 @@ int main(int argc, char** argv) {
                           << " with timestamp "
                           << (unsigned long)(points->header.stamp.sec * 1e9 +
                                              points->header.stamp.nanosec);
+    timer.start();
 
     // publish clock for sim time
     auto time_msg = rosgraph_msgs::msg::Clock();
@@ -238,6 +241,12 @@ int main(int argc, char** argv) {
       ++terrain_type;
       terrain_type %= 5;
     };
+
+    CLOG(WARNING, "test") << "Point cloud frame " << frame << " with timestamp "
+                          << (unsigned long)(points->header.stamp.sec * 1e9 +
+                                             points->header.stamp.nanosec)
+                          << " took " << timer;
+    timer.reset();
   }
 
   planner->setRunning(false);
