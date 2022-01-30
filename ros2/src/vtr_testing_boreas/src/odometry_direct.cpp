@@ -4,7 +4,6 @@
 
 #include "vtr_common/timing/utils.hpp"
 #include "vtr_common/utils/filesystem.hpp"
-#include "vtr_lidar/pipeline.hpp"
 #include "vtr_lidar/pipeline_v2.hpp"
 #include "vtr_logging/logging_init.hpp"
 #include "vtr_tactic/pipelines/factory.hpp"
@@ -36,7 +35,7 @@ std::pair<int64_t, Eigen::MatrixXd> load_lidar(const std::string &path) {
   std::ifstream ifs(path, std::ios::binary);
   std::vector<char> buffer(std::istreambuf_iterator<char>(ifs), {});
   uint float_offset = 4;
-  uint fields = 6; // x, y, z, i, r, t
+  uint fields = 6;  // x, y, z, i, r, t
   uint point_step = float_offset * fields;
   uint N = floor(buffer.size() / point_step);
   Eigen::MatrixXd pc(Eigen::MatrixXd::Ones(N, fields));
@@ -61,8 +60,7 @@ EdgeTransform load_T_robot_lidar(const std::string &path) {
 
   Eigen::Matrix4d T_robot_lidar_mat;
   for (size_t row = 0; row < 4; row++)
-    for (size_t col = 0; col < 4; col++)
-      ifs >> T_robot_lidar_mat(row, col);
+    for (size_t col = 0; col < 4; col++) ifs >> T_robot_lidar_mat(row, col);
 
   Eigen::Matrix4d yfwd2xfwd;
   yfwd2xfwd << 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1;
@@ -73,7 +71,7 @@ EdgeTransform load_T_robot_lidar(const std::string &path) {
   return T_robot_lidar;
 }
 
-} // namespace
+}  // namespace
 
 int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
@@ -149,8 +147,7 @@ int main(int argc, char **argv) {
   // Load dataset
   int i = 0;
   for (auto it = dirs.begin(); it != dirs.end(); it++, i++) {
-    if (!rclcpp::ok())
-      break;
+    if (!rclcpp::ok()) break;
 
     // Load
     const auto [timestamp, points] = load_lidar(it->path().string());
