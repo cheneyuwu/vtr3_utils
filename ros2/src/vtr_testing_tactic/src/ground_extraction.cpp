@@ -80,6 +80,8 @@ int main(int argc, char **argv) {
       graph->at(ids.front())->unload();
       ids.pop();
     }
+
+    if (!rclcpp::ok()) break;  // for ctrl-c
   }
 
   graph->save();

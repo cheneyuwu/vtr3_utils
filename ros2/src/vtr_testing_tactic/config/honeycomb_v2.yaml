@@ -259,12 +259,15 @@
         window_size: 3
 
       change_detection:
-        type: "lidar.change_detection"
-
-        resolution: 1.0
-        size_x: 40.0
-        size_y: 20.0
-
+        type: "lidar.change_detection_v2"
+        # change detection
+        search_radius: 1.0
+        # cost map
+        resolution: 0.5
+        size_x: 16.0
+        size_y: 8.0
+        # general
+        run_online: false
         run_async: true
         visualize: true
 

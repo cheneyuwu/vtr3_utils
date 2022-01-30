@@ -10,8 +10,9 @@
 
 #include "vtr_common/timing/utils.hpp"
 #include "vtr_common/utils/filesystem.hpp"
-#include "vtr_lidar/pipeline.hpp"
+#include "vtr_lidar/pipeline_v2.hpp"
 #include "vtr_logging/logging_init.hpp"
+#include "vtr_tactic/modules/factory.hpp"
 
 using namespace vtr;
 using namespace vtr::common;
@@ -42,25 +43,24 @@ int main(int argc, char **argv) {
   configureLogging(log_filename, log_debug, log_enabled);
 
   // world offset for localization path visualization
-  auto tf_static_bc =
-      std::make_shared<tf2_ros::StaticTransformBroadcaster>(node);
+  auto tf_sbc = std::make_shared<tf2_ros::StaticTransformBroadcaster>(node);
   Eigen::Vector3d vis_loc_path_offset;
   vis_loc_path_offset << 0.0, 0.0, 0.0;
   Eigen::Affine3d T(Eigen::Translation3d{vis_loc_path_offset});
   auto msg = tf2::eigenToTransform(T);
   msg.header.frame_id = "world";
   msg.child_frame_id = "world (offset)";
-  tf_static_bc->sendTransform(msg);
+  tf_sbc->sendTransform(msg);
+
+  // Parameters
+  const unsigned run_id = node->declare_parameter<int>("run_id", 1);
 
   // Pose graph
   auto graph = tactic::Graph::MakeShared((data_dir / "graph").string(), true);
 
+  // module
   auto module_factory = std::make_shared<ROSModuleFactory>(node);
-
   auto module = module_factory->get("localization.change_detection");
-
-  // Parameters
-  const unsigned run_id = node->declare_parameter<int>("run_id", 1);
 
   /// robot lidar transformation is hard-coded - check measurements.
   Eigen::Matrix4d T_lidar_robot_mat;
@@ -68,8 +68,8 @@ int main(int argc, char **argv) {
   EdgeTransform T_lidar_robot(T_lidar_robot_mat);
   T_lidar_robot.setZeroCovariance();
 
-  std::queue<tactic::VertexId> ids;
   size_t depth = 5;
+  std::queue<tactic::VertexId> ids;
 
   /// Create a temporal evaluator
   auto evaluator = std::make_shared<tactic::TemporalEvaluator<tactic::Graph>>();
@@ -84,8 +84,8 @@ int main(int argc, char **argv) {
         "point_scan", "vtr_lidar_msgs/msg/PointScan", time_range.first,
         time_range.second);
     for (const auto &scan_msg : scan_msgs) {
-      lidar::LidarOutputCache output;
       lidar::LidarQueryCache qdata;
+      lidar::LidarOutputCache output;
       qdata.node = node;
 
       auto locked_scan_msg_ref = scan_msg->sharedLocked();  // lock the msg
@@ -112,6 +112,7 @@ int main(int argc, char **argv) {
       const auto &T_lv_ov = graph->at(loc_vid, vertex->id())->T();
       const auto &T_r_lv = (T_lv_ov * T_ov_s * T_s_r).inverse();
       qdata.map_id.emplace(loc_vid);
+      qdata.map_sid.emplace(0);  /// \note: random sid since it is not used
       qdata.T_r_m_loc.emplace(T_r_lv);
 
       // retrieve the localization map from the vertex
@@ -122,9 +123,7 @@ int main(int argc, char **argv) {
       qdata.curr_map_loc = std::make_shared<PointMap<PointWithInfo>>(
           locked_map_msg.get().getData());
 
-      module->runAsync(qdata, output, graph, nullptr, tactic::Task::Priority{},
-                       tactic::Task::DepId{});
-
+      module->runAsync(qdata, output, graph, nullptr, {}, {});
       std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
       if (!rclcpp::ok()) break;
@@ -137,7 +136,7 @@ int main(int argc, char **argv) {
       ids.pop();
     }
 
-    if (!rclcpp::ok()) break;
+    if (!rclcpp::ok()) break;  // for ctrl-c
   }
 
   graph->save();

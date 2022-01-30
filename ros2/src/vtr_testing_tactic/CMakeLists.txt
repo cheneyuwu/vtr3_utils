@@ -51,8 +51,8 @@ ament_target_dependencies(${PROJECT_NAME}_ground_extraction rclcpp rosbag2 rosba
 add_executable(${PROJECT_NAME}_terrain_assessment src/terrain_assessment.cpp)
 ament_target_dependencies(${PROJECT_NAME}_terrain_assessment rclcpp rosbag2 rosbag2_cpp vtr_lidar)
 
-# add_executable(${PROJECT_NAME}_change_detection src/change_detection.cpp)
-# ament_target_dependencies(${PROJECT_NAME}_change_detection rclcpp rosbag2 rosbag2_cpp vtr_lidar)
+add_executable(${PROJECT_NAME}_change_detection src/change_detection.cpp)
+ament_target_dependencies(${PROJECT_NAME}_change_detection rclcpp rosbag2 rosbag2_cpp vtr_lidar)
 
 # add_executable(${PROJECT_NAME}_odometry_direct2 src/odometry_direct2.cpp)
 # ament_target_dependencies(${PROJECT_NAME}_odometry_direct2 rclcpp rosbag2 rosbag2_cpp vtr_lidar vtr_navigation)
@@ -68,7 +68,7 @@ install(
     ${PROJECT_NAME}_localization_direct
     ${PROJECT_NAME}_localization_planning_direct
     ${PROJECT_NAME}_intra_exp_merging
-    # ${PROJECT_NAME}_change_detection
+    ${PROJECT_NAME}_change_detection
     # ${PROJECT_NAME}_odometry_direct2
     ${PROJECT_NAME}_ground_extraction
     ${PROJECT_NAME}_terrain_assessment
