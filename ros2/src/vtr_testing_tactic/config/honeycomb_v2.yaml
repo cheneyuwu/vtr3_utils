@@ -8,10 +8,10 @@
         ## ADD LOGGER IDS HERE
         # tactic
         # "tactic",
+        # "tactic.pipeline",
         # "tactic.module",
         # "tactic.module.live_mem_manager",
         # "tactic.module.graph_mem_manager",
-        # "tactic.pipeline",
         # path planner
         # "path_planning",
         # "path_planning.teb",
@@ -93,8 +93,8 @@
           "recall",
           "icp",
           "change_detection",
-          "ground_extraction",
-          "obstacle_detection",
+          # "ground_extraction",
+          # "obstacle_detection",
           "memory",
         ]
 
