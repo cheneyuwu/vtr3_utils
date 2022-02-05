@@ -14,6 +14,7 @@
 #include "vtr_logging/logging_init.hpp"
 #include "vtr_tactic/modules/factory.hpp"
 
+namespace fs = std::filesystem;
 using namespace vtr;
 using namespace vtr::common;
 using namespace vtr::logging;
@@ -72,8 +73,8 @@ int main(int argc, char **argv) {
   std::queue<tactic::VertexId> ids;
 
   /// Create a temporal evaluator
-  auto evaluator = std::make_shared<tactic::TemporalEvaluator<tactic::Graph>>();
-  evaluator->setGraph(graph.get());
+  auto evaluator =
+      std::make_shared<tactic::TemporalEvaluator<tactic::GraphBase>>(*graph);
 
   auto subgraph = graph->getSubgraph(tactic::VertexId(run_id, 0), evaluator);
   for (auto it = subgraph->begin(tactic::VertexId(run_id, 0));
@@ -105,11 +106,17 @@ int main(int argc, char **argv) {
       qdata.undistorted_point_cloud.emplace(point_scan_data);
 
       // find the privileged vertex it has been localized against
-      const auto neighbors = graph->at(vertex->id())->spatialNeighbours();
-      if (neighbors.empty()) continue;
-      const auto loc_vid = *neighbors.begin();
+      const auto neighbors = graph->neighbors(vertex->id());
+      VertexId loc_vid = VertexId::Invalid();
+      for (auto neighbor : neighbors) {
+        if (graph->at(EdgeId(vertex->id(), neighbor))->isSpatial()) {
+          loc_vid = neighbor;
+          break;
+        }
+      }
+      if (!loc_vid.isValid()) continue;
       const auto &T_ov_s = point_scan.T_vertex_map();
-      const auto &T_lv_ov = graph->at(loc_vid, vertex->id())->T();
+      const auto &T_lv_ov = graph->at(EdgeId(loc_vid, vertex->id()))->T();
       const auto &T_r_lv = (T_lv_ov * T_ov_s * T_s_r).inverse();
       qdata.map_id.emplace(loc_vid);
       qdata.map_sid.emplace(0);  /// \note: random sid since it is not used

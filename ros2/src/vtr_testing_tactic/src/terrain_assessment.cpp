@@ -10,6 +10,7 @@
 #include "vtr_logging/logging_init.hpp"
 #include "vtr_tactic/modules/factory.hpp"
 
+namespace fs = std::filesystem;
 using namespace vtr;
 using namespace vtr::common;
 using namespace vtr::logging;
@@ -55,8 +56,8 @@ int main(int argc, char **argv) {
   sequence.reserve(graph->numberOfVertices());
   LOG(WARNING) << "Total number of vertices: " << graph->numberOfVertices();
   // Extract the privileged sub graph from the full graph.
-  auto evaluator = std::make_shared<tactic::TemporalEvaluator<tactic::Graph>>();
-  evaluator->setGraph(graph.get());
+  auto evaluator =
+      std::make_shared<tactic::TemporalEvaluator<tactic::GraphBase>>(*graph);
   auto subgraph = graph->getSubgraph(tactic::VertexId(run_id, 0), evaluator);
   std::stringstream ss;
   ss << "Repeat vertices: ";

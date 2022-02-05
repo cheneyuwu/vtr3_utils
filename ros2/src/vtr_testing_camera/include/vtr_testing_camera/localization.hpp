@@ -13,7 +13,7 @@ using namespace vtr::logging;
 using namespace vtr::navigation;
 using namespace vtr::pose_graph;
 
-using LocEvaluator = eval::Mask::Privileged<RCGraph>::Caching;
+using LocEvaluator = tactic::PrivilegedEvaluator<tactic::GraphBase>;
 
 class LocalizationNavigator : public OfflineNavigator {
  public:

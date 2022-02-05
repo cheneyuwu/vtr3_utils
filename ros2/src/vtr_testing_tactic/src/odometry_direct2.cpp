@@ -22,6 +22,7 @@
 
 #include "sensor_msgs/msg/point_cloud2.hpp"
 
+namespace fs = std::filesystem;
 using namespace vtr;
 using namespace vtr::common;
 using namespace vtr::logging;

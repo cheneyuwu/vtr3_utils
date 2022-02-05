@@ -19,6 +19,11 @@ LOC_INPUT=rosbag2_2022_01_09-18_55_25
 # backyard
 ODO_INPUT=rosbag2_2021_12_30-14_31_27
 LOC_INPUT=rosbag2_2021_12_30-14_37_51
+# dome inside
+ODO_INPUT=rosbag2_2022_01_30-22_34_29
+LOC_INPUT=rosbag2_2022_01_30-22_36_16
+
+
 
 ## Perform odometry on a sequence directly
 ros2 run vtr_testing_tactic vtr_testing_tactic_odometry_direct  \

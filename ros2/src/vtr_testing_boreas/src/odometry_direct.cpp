@@ -10,6 +10,7 @@
 #include "vtr_tactic/rviz_tactic_callback.hpp"
 #include "vtr_tactic/tactic.hpp"
 
+namespace fs = std::filesystem;
 using namespace vtr;
 using namespace vtr::common;
 using namespace vtr::logging;
@@ -174,7 +175,6 @@ int main(int argc, char **argv) {
 
     // fill in the vehicle to sensor transform and frame names
     query_data->robot_frame.emplace(robot_frame);
-    query_data->lidar_frame.emplace(lidar_frame);
     query_data->T_s_r.emplace(T_lidar_robot);
 
     // execute the pipeline

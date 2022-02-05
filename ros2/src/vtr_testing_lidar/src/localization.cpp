@@ -20,7 +20,7 @@ using namespace vtr::navigation;
 using namespace vtr::pose_graph;
 using namespace vtr::tactic;
 
-using LocEvaluator = eval::Mask::Privileged<RCGraph>::Caching;
+using LocEvaluator = tactic::PrivilegedEvaluator<tactic::GraphBase>;
 
 int main(int argc, char **argv) {
   rclcpp::init(argc, argv);

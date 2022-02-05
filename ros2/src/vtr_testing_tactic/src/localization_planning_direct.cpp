@@ -23,6 +23,7 @@
 #include "vtr_tactic/rviz_tactic_callback.hpp"
 #include "vtr_tactic/tactic.hpp"
 
+namespace fs = std::filesystem;
 using namespace vtr;
 using namespace vtr::common;
 using namespace vtr::logging;
@@ -130,10 +131,8 @@ int main(int argc, char **argv) {
   CLOG(WARNING, "test") << "Total number of vertices: "
                         << graph->numberOfVertices();
   // Extract the privileged sub graph from the full graph.
-  using LocEvaluator =
-      pose_graph::eval::Mask::Privileged<tactic::Graph>::Caching;
-  LocEvaluator::Ptr evaluator(new LocEvaluator());
-  evaluator->setGraph(graph.get());
+  using LocEvaluator = tactic::PrivilegedEvaluator<tactic::GraphBase>;
+  auto evaluator = std::make_shared<LocEvaluator>(*graph);
   auto privileged_path = graph->getSubgraph(0ul, evaluator);
   std::stringstream ss;
   ss << "Repeat vertices: ";
@@ -230,7 +229,6 @@ int main(int argc, char **argv) {
 
     // fill in the vehicle to sensor transform and frame names
     query_data->robot_frame.emplace(robot_frame);
-    query_data->lidar_frame.emplace(lidar_frame);
     query_data->T_s_r.emplace(T_lidar_robot);
 
     // execute the pipeline
